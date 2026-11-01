@@ -148,7 +148,7 @@ def render_message(item, settings):
     category = html.escape(item["category"])
     title = html.escape(clean_html(entry.get("title", "Untitled")))
     url = html.escape(entry.get("link", ""), quote=True)
-    lines = [f"<b>{source} | {category}</b>", f"<b>{title}</b>"]
+    lines = [f"<b>{category} | {source}</b>", f"<b>{title}</b>"]
 
     if settings.get("include_summary", True):
         summary = clean_html(entry.get("summary") or entry.get("description"))
