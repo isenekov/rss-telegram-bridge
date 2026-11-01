@@ -1,22 +1,36 @@
-
 feeds:
   - name: "Новости IGN"
     url: "https://feeds.feedburner.com/ign/news"
+    source: "IGN"
+    category: "NEWS"
     enabled: true
 
   - name: "Обзоры IGN"
     url: "https://feeds.feedburner.com/ign/reviews"
+    source: "IGN"
+    category: "REVIEW"
     enabled: true
 
   - name: "Видео IGN"
     url: "https://www.ign.com/rss/v2/videos/feed"
+    source: "IGN"
+    category: "VIDEO"
     enabled: true
 
   - name: "Статьи IGN"
     url: "https://www.ign.com/rss/v2/articles/feed"
+    source: "IGN"
+    category: "ARTICLE"
+    enabled: true
+
+  - name: "Eurogamer"
+    url: "https://www.eurogamer.net/feed"
+    source: "Eurogamer"
+    category: "AUTO"
     enabled: true
 
 settings:
-  max_articles_per_run: 5
+  max_articles_per_run: 40
+  max_article_age_hours: 2
   include_summary: true
   summary_max_length: 280
