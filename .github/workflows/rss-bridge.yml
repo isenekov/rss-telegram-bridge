@@ -1,81 +1,46 @@
+
 name: RSS to Telegram Bridge
 
 on:
-  # Run at 8am and 5pm MYT (UTC+8)
-  # 8am MYT = 0:00 UTC, 5pm MYT = 9:00 UTC
   schedule:
-    - cron: '0 0 * * *'   # 8am MYT
-    - cron: '0 9 * * *'   # 5pm MYT
-  
-  # Allow manual trigger
+    - cron: '17,47 * * * *'
   workflow_dispatch:
-
-  # Run on push to main (for testing)
-  push:
-    branches: [main]
-    paths:
-      - 'main.py'
-      - 'config.yaml'
-      - 'requirements.txt'
-      - '.github/workflows/rss-bridge.yml'
 
 permissions:
   contents: write
 
+concurrency:
+  group: rss-telegram-bridge
+  cancel-in-progress: false
+
 jobs:
-  fetch-and-post:
+  rss-to-telegram:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout main (code)
+      - name: Download repository
         uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0  # Fetch all branches
-      
-      - name: Fetch posted state from data branch
-        run: |
-          git fetch origin data:data 2>/dev/null || true
-          git show data:posted.json > posted.json 2>/dev/null || echo '{"posted": [], "updated": null}' > posted.json
-          cat posted.json
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
-      
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      
-      - name: Run RSS bridge
+
+      - name: Fetch RSS and publish to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py
-      
-      - name: Save posted state to data branch
+
+      - name: Save history of published articles
         run: |
-          # Configure git
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Save current posted.json
-          cp posted.json /tmp/posted.json
-          
-          # Switch to data branch
-          git checkout data
-          
-          # Copy updated file
-          cp /tmp/posted.json posted.json
-          
-          # Commit and push if changed
-          git add posted.json
-          if git diff --cached --quiet; then
-            echo "No changes to posted.json"
-          else
-            git commit -m "Update posted state [skip ci]"
-            git push origin data
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f posted.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update posted RSS articles"
+            git push
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
