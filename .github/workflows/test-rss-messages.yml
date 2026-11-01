@@ -1,0 +1,76 @@
+name: Test RSS messages in Telegram
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send-test-posts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send sample articles to Telegram without updating history
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import time
+          import httpx
+          import yaml
+          from pathlib import Path
+          from main import fetch_entries, category_for, normalize_link, render_message, send_message
+
+          config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
+          settings = config.get("settings") or {}
+          feeds = [feed for feed in config.get("feeds", []) if feed.get("enabled", True)]
+          seen_links = set()
+          sent = 0
+
+          with httpx.Client(timeout=30) as client:
+              for feed in feeds:
+                  if sent >= 5:
+                      break
+                  entries = fetch_entries(feed["url"])
+                  source = feed.get("source") or "IGN"
+                  chosen = None
+                  for entry in entries:
+                      link = normalize_link(entry.get("link", ""))
+                      if link and link not in seen_links:
+                          chosen = entry
+                          seen_links.add(link)
+                          break
+                  if not chosen:
+                      print(f"No sample found: {feed.get('name')}")
+                      continue
+
+                  item = {
+                      "entry": chosen,
+                      "source": source,
+                      "category": category_for(chosen, feed),
+                  }
+                  message = render_message(item, settings)
+                  message += "\n\n<i>TEST MESSAGE — проверка оформления</i>"
+                  if not send_message(client, message):
+                      raise RuntimeError(f"Telegram rejected test article from {source}")
+                  sent += 1
+                  print(f"Sent sample {sent}: {source} / {item['category']}")
+                  time.sleep(1.1)
+
+          print(f"Sent {sent} sample messages. posted.json was NOT modified.")
+          if sent < 2:
+              raise RuntimeError("Could not send multiple test messages")
+          PY
