@@ -3,7 +3,7 @@ name: RSS to Telegram Bridge
 
 on:
   schedule:
-    - cron: '4,14,24,34,44,54 * * * *'
+- cron: '6,16,26,36,46,56 * * * *'
   workflow_dispatch:
 
 permissions:
