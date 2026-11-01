@@ -1,229 +1,284 @@
 #!/usr/bin/env python3
-"""
-RSS to Telegram Bridge
-Fetches RSS feeds and posts new articles to a Telegram channel/group.
-"""
+"""RSS to Telegram Bridge: fresh articles, shared limits and deduplication."""
 
-import os
-import json
+import calendar
 import hashlib
 import html
+import json
+import os
 import re
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 
 import feedparser
 import httpx
 import yaml
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
-
-# Configuration
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-MESSAGE_TEMPLATE = os.getenv(
-    "MESSAGE_TEMPLATE",
-    "📰 *{title}*\n\n{summary}\n\n🔗 [Read more]({link})"
-)
-
-# Paths
-SCRIPT_DIR = Path(__file__).parent
-CONFIG_PATH = SCRIPT_DIR / "config.yaml"
-POSTED_PATH = SCRIPT_DIR / "posted.json"
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_PATH = BASE_DIR / "config.yaml"
+POSTED_PATH = BASE_DIR / "posted.json"
+STATE_VERSION = 2
 
 
-def load_config() -> dict:
-    """Load feed configuration from YAML file."""
-    with open(CONFIG_PATH, "r") as f:
-        return yaml.safe_load(f)
+def clean_html(value):
+    text = re.sub(r"<[^>]*>", " ", str(value or ""))
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
-def load_posted() -> set:
-    """Load set of already-posted article IDs."""
-    if POSTED_PATH.exists():
-        with open(POSTED_PATH, "r") as f:
-            data = json.load(f)
-            return set(data.get("posted", []))
-    return set()
+def truncate(value, limit):
+    if len(value) <= limit:
+        return value
+    if limit < 4:
+        return value[:limit]
+    return value[:limit - 3].rsplit(" ", 1)[0] + "..."
 
 
-def save_posted(posted: set) -> None:
-    """Save posted article IDs."""
-    with open(POSTED_PATH, "w") as f:
-        json.dump({"posted": list(posted), "updated": datetime.now(timezone.utc).isoformat()}, f, indent=2)
-
-
-def get_article_id(entry: dict) -> str:
-    """Generate a unique ID for an article."""
-    # Use entry ID if available, otherwise hash the link
-    identifier = entry.get("id") or entry.get("link", "")
-    return hashlib.sha256(identifier.encode()).hexdigest()[:16]
-
-
-def clean_html(text: str) -> str:
-    """Remove HTML tags and decode entities."""
-    if not text:
+def normalize_link(link):
+    try:
+        parts = urlsplit((link or "").strip())
+        host = (parts.hostname or "").lower().removeprefix("www.")
+        if not host:
+            return ""
+        path = (parts.path or "/").rstrip("/").lower() or "/"
+        if path.endswith("/amp"):
+            path = path[:-4] or "/"
+        # Drop tracking/query parameters and fragments for article deduplication.
+        return urlunsplit(("https", host, path, "", ""))
+    except ValueError:
         return ""
-    # Remove HTML tags
-    clean = re.sub(r'<[^>]+>', '', text)
-    # Decode HTML entities
-    clean = html.unescape(clean)
-    # Normalize whitespace
-    clean = re.sub(r'\s+', ' ', clean).strip()
-    return clean
 
 
-def truncate(text: str, max_length: int) -> str:
-    """Truncate text to max length with ellipsis."""
-    if len(text) <= max_length:
-        return text
-    return text[:max_length - 3].rsplit(' ', 1)[0] + "..."
+def article_keys(entry, source):
+    link = normalize_link(entry.get("link", ""))
+    title = clean_html(entry.get("title", "")).casefold()
+    keys = set()
+    if link:
+        keys.add("url:" + hashlib.sha256(link.encode()).hexdigest()[:24])
+    if title:
+        normalized_title = re.sub(r"\s+", " ", title)
+        keys.add("title:" + source.casefold() + ":" +
+                 hashlib.sha256(normalized_title.encode()).hexdigest()[:24])
+
+    # Compatibility with old posted.json: legacy IDs may be RSS GUIDs.
+    legacy_id = entry.get("id") or entry.get("link", "")
+    if legacy_id:
+        keys.add(hashlib.sha256(str(legacy_id).encode()).hexdigest()[:16])
+    return keys
 
 
-def escape_markdown(text: str) -> str:
-    """Escape Telegram MarkdownV2 special characters."""
-    # Characters that need escaping in MarkdownV2
-    special_chars = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
-    for char in special_chars:
-        text = text.replace(char, f'\\{char}')
-    return text
+def load_state():
+    if not POSTED_PATH.exists():
+        return set(), False
+    try:
+        with POSTED_PATH.open(encoding="utf-8") as handle:
+            state = json.load(handle)
+        if not isinstance(state, dict):
+            raise ValueError("posted.json must contain an object")
+        return set(state.get("posted", [])), state.get("state_version", 0) >= STATE_VERSION
+    except (OSError, ValueError, TypeError) as exc:
+        # Fail closed: never resend a whole feed if the history is corrupt.
+        raise RuntimeError(f"Cannot load posted.json safely: {exc}") from exc
 
 
-def format_message(entry: dict, settings: dict) -> str:
-    """Format an article into a Telegram message."""
-    title = clean_html(entry.get("title", "No title"))
-    link = entry.get("link", "")
-    
-    # Get summary
-    summary = ""
-    if settings.get("include_summary", True):
-        summary_raw = entry.get("summary") or entry.get("description", "")
-        summary = clean_html(summary_raw)
-        max_len = settings.get("summary_max_length", 280)
-        summary = truncate(summary, max_len)
-    
-    # Format message (using Markdown for Telegram)
-    message = MESSAGE_TEMPLATE.format(
-        title=title,
-        link=link,
-        summary=summary if summary else "No summary available"
-    )
-    
-    return message
-
-
-def send_telegram_message(text: str) -> bool:
-    """Send a message to Telegram."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
-        return False
-    
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+def save_state(posted):
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False
+        "posted": sorted(posted),
+        "state_version": STATE_VERSION,
+        "updated": datetime.now(timezone.utc).isoformat(),
     }
-    
-    try:
-        with httpx.Client(timeout=30) as client:
-            response = client.post(url, json=payload)
-            if response.status_code == 200:
-                return True
-            else:
-                print(f"❌ Telegram API error: {response.status_code} - {response.text}")
-                return False
-    except Exception as e:
-        print(f"❌ Failed to send message: {e}")
-        return False
+    temp_path = POSTED_PATH.with_suffix(".json.tmp")
+    with temp_path.open("w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+    temp_path.replace(POSTED_PATH)
 
 
-def fetch_feed(url: str) -> list:
-    """Fetch and parse an RSS feed."""
+def entry_date(entry):
+    for field in ("published_parsed", "updated_parsed", "created_parsed"):
+        parsed = entry.get(field)
+        if parsed:
+            try:
+                return datetime.fromtimestamp(calendar.timegm(parsed), timezone.utc)
+            except (TypeError, ValueError, OverflowError):
+                pass
+    return None
+
+
+def category_for(entry, feed):
+    category = str(feed.get("category", "ARTICLE")).upper()
+    if category == "AUTO":
+        tags = " ".join(
+            str(tag.get("term", "")) for tag in entry.get("tags", [])
+        ).casefold()
+        if "review" in tags:
+            return "REVIEW"
+        if "video" in tags:
+            return "VIDEO"
+        if "news" in tags:
+            return "NEWS"
+        return "ARTICLE"
+    return category if category in {"NEWS", "REVIEW", "VIDEO", "ARTICLE"} else "ARTICLE"
+
+
+def fetch_entries(url):
     try:
-        feed = feedparser.parse(url)
-        if feed.bozo and not feed.entries:
-            print(f"⚠️ Feed parsing issue: {feed.bozo_exception}")
-            return []
-        return feed.entries
-    except Exception as e:
-        print(f"❌ Failed to fetch feed: {e}")
+        with httpx.Client(timeout=30, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; RSS-Telegram-Bridge/2.0)",
+            "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+        }) as client:
+            response = client.get(url)
+            response.raise_for_status()
+        parsed = feedparser.parse(response.content)
+        if parsed.bozo and not parsed.entries:
+            print(f"⚠️ RSS parsing failed: {parsed.bozo_exception}")
+        return parsed.entries
+    except (httpx.HTTPError, ValueError) as exc:
+        print(f"❌ RSS request failed for {url}: {exc}")
         return []
 
 
-def process_feeds() -> None:
-    """Main function to process all feeds."""
-    print(f"🚀 Starting RSS to Telegram Bridge - {datetime.now(timezone.utc).isoformat()}")
-    
-    # Validate configuration
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("❌ Missing required environment variables!")
-        print("   Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
-        return
-    
-    # Load configuration
-    config = load_config()
-    feeds = config.get("feeds", [])
-    settings = config.get("settings", {})
-    max_per_run = settings.get("max_articles_per_run", 5)
-    
-    # Load already-posted articles
-    posted = load_posted()
-    initial_count = len(posted)
-    
-    total_posted = 0
-    
-    for feed_config in feeds:
-        if not feed_config.get("enabled", True):
-            continue
-        
-        feed_name = feed_config.get("name", "Unknown")
-        feed_url = feed_config.get("url")
-        
-        if not feed_url:
-            continue
-        
-        print(f"\n📡 Fetching: {feed_name}")
-        entries = fetch_feed(feed_url)
-        
-        if not entries:
-            print(f"   No entries found")
-            continue
-        
-        print(f"   Found {len(entries)} entries")
-        
-        # Process new articles (newest first, limited)
-        new_count = 0
-        for entry in entries:
-            if new_count >= max_per_run:
-                break
-            
-            article_id = get_article_id(entry)
-            
-            if article_id in posted:
+def render_message(item, settings):
+    entry = item["entry"]
+    source = html.escape(item["source"])
+    category = html.escape(item["category"])
+    title = html.escape(clean_html(entry.get("title", "Untitled")))
+    url = html.escape(entry.get("link", ""), quote=True)
+    lines = [f"<b>{source} | {category}</b>", f"<b>{title}</b>"]
+
+    if settings.get("include_summary", True):
+        summary = clean_html(entry.get("summary") or entry.get("description"))
+        if summary:
+            summary = truncate(summary, int(settings.get("summary_max_length", 280)))
+            lines.append(html.escape(summary))
+
+    if url:
+        lines.append(f'🔗 <a href="{url}">Читать на {source}</a>')
+    return "\n\n".join(lines)
+
+
+def send_message(client, message):
+    if not BOT_TOKEN or not CHAT_ID:
+        raise RuntimeError("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID")
+    endpoint = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False,
+    }
+    for attempt in range(3):
+        try:
+            response = client.post(endpoint, json=payload)
+            if response.status_code == 200 and response.json().get("ok"):
+                return True
+            if response.status_code == 429 and attempt < 2:
+                wait = response.json().get("parameters", {}).get("retry_after", 2)
+                time.sleep(min(max(float(wait), 1.0), 30.0))
                 continue
-            
-            # Format and send
-            message = format_message(entry, settings)
-            title = clean_html(entry.get("title", ""))[:50]
-            
-            if send_telegram_message(message):
-                print(f"   ✅ Posted: {title}...")
-                posted.add(article_id)
-                new_count += 1
-                total_posted += 1
+            print(f"❌ Telegram API error: {response.status_code} - {response.text[:500]}")
+            return False
+        except (httpx.HTTPError, ValueError) as exc:
+            print(f"❌ Telegram request failed: {exc}")
+            if attempt < 2:
+                time.sleep(2)
+    return False
+
+
+def process_feeds():
+    print(f"🚀 Starting RSS to Telegram Bridge - {datetime.now(timezone.utc).isoformat()}")
+    if not BOT_TOKEN or not CHAT_ID:
+        raise RuntimeError("Missing Telegram secrets")
+
+    with CONFIG_PATH.open(encoding="utf-8") as handle:
+        config = yaml.safe_load(handle) or {}
+    settings = config.get("settings") or {}
+    max_per_run = max(0, int(settings.get("max_articles_per_run", 40)))
+    age_hours = max(0, float(settings.get("max_article_age_hours", 2)))
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=age_hours)
+
+    posted, initialized = load_state()
+    original_count = len(posted)
+    candidates = []
+    all_keys = set()
+    fetched_count = 0
+    for index, feed in enumerate(config.get("feeds") or []):
+        if not feed.get("enabled", True) or not feed.get("url"):
+            continue
+        name = str(feed.get("name", "RSS"))
+        source = str(feed.get("source") or ("Eurogamer" if "eurogamer" in feed["url"] else "IGN"))
+        print(f"\n📡 Fetching: {name}")
+        entries = fetch_entries(feed["url"])
+        fetched_count += len(entries)
+        print(f"   Found {len(entries)} entries")
+
+        for entry in entries:
+            keys = article_keys(entry, source)
+            if not keys:
+                continue
+            all_keys.update(keys)
+            date = entry_date(entry)
+            if date is None or not (cutoff <= date <= now + timedelta(minutes=10)):
+                continue
+            category = category_for(entry, feed)
+            priority = {"REVIEW": 0, "VIDEO": 1, "NEWS": 2, "ARTICLE": 3}[category]
+            candidates.append({
+                "entry": entry, "source": source, "category": category,
+                "date": date, "keys": keys, "priority": priority,
+                "feed_order": index,
+            })
+
+    if not initialized:
+        # First version-2 run: remember all visible items without replaying them.
+        posted.update(all_keys)
+        save_state(posted)
+        print(f"\n🛡️ Initialized deduplicated history: {len(all_keys)} keys, "
+              f"{fetched_count} RSS entries scanned. No old articles reposted.")
+        return
+
+    # Prefer the specific feed's label when entries overlap with general feeds.
+    candidates.sort(key=lambda x: (x["priority"], x["feed_order"], -x["date"].timestamp()))
+    unique = []
+    seen = set()
+    for item in candidates:
+        if item["keys"] & seen:
+            continue
+        seen.update(item["keys"])
+        unique.append(item)
+
+    new_items = [item for item in unique if not (item["keys"] & posted)]
+    # Most recent 40 across every source, then send those chronologically.
+    new_items.sort(key=lambda x: x["date"], reverse=True)
+    selected = sorted(new_items[:max_per_run], key=lambda x: x["date"])
+
+    sent = 0
+    with httpx.Client(timeout=30) as client:
+        for item in selected:
+            message = render_message(item, settings)
+            if send_message(client, message):
+                posted.update(item["keys"])
+                sent += 1
+                print(f"   ✅ Posted [{item['source']} / {item['category']}]: "
+                      f"{clean_html(item['entry'].get('title', ''))[:70]}")
+                # Telegram limits message frequency per channel.
+                time.sleep(1.1)
             else:
-                print(f"   ❌ Failed: {title}...")
-    
-    # Save state
-    save_posted(posted)
-    
-    print(f"\n📊 Summary:")
-    print(f"   Articles posted this run: {total_posted}")
-    print(f"   Total tracked articles: {len(posted)} (+{len(posted) - initial_count})")
+                print(f"   ❌ Failed [{item['source']}]: "
+                      f"{clean_html(item['entry'].get('title', ''))[:70]}")
+
+    if len(posted) != original_count:
+        save_state(posted)
+
+    print("\n📊 Summary:")
+    print(f"   RSS entries scanned: {fetched_count}")
+    print(f"   Fresh unique articles: {len(new_items)}")
+    print(f"   Articles posted this run: {sent} (limit: {max_per_run} total)")
+    print(f"   Total tracked keys: {len(posted)}")
     print("✅ Done!")
 
 
