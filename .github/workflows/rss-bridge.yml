@@ -35,12 +35,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python main.py
 
+
       - name: Save history of published articles
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add -f posted.json
+
           if ! git diff --cached --quiet; then
             git commit -m "Update posted RSS articles"
-            git push
+            git pull --rebase origin main
+            git push origin HEAD:main
           fi
