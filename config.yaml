@@ -1,44 +1,21 @@
-# RSS Feeds to monitor
-# Add your feeds here
-
 feeds:
-  # Bloomberg feeds
-  - name: "Bloomberg Markets"
-    url: "https://feeds.bloomberg.com/markets/news.rss"
+  - name: "Новости IGN"
+    url: "https://feeds.feedburner.com/ign/news"
     enabled: true
-  
-  - name: "Bloomberg Politics"
-    url: "https://feeds.bloomberg.com/politics/news.rss"
-    enabled: true
-  
-  - name: "Bloomberg Technology"
-    url: "https://feeds.bloomberg.com/technology/news.rss"
-    enabled: true
-  
-  - name: "Bloomberg Wealth"
-    url: "https://feeds.bloomberg.com/wealth/news.rss"
-    enabled: false
-  
-  - name: "Bloomberg Economics"
-    url: "https://feeds.bloomberg.com/economics/news.rss"
-    enabled: false
-  
-  # Other feeds (disabled by default)
-  - name: "Hacker News"
-    url: "https://hnrss.org/frontpage"
-    enabled: false
-  
-  - name: "TechCrunch"
-    url: "https://techcrunch.com/feed/"
-    enabled: false
 
-# Settings
+  - name: "Обзоры IGN"
+    url: "https://feeds.feedburner.com/ign/reviews"
+    enabled: true
+
+  - name: "Видео IGN"
+    url: "https://www.ign.com/rss/v2/videos/feed"
+    enabled: true
+
+ - name: "Статьи IGN"
+    url: "https://www.ign.com/rss/v2/articles/feed"
+    enabled: true
+
 settings:
-  # Maximum articles to post per feed per run (prevents spam on first run)
   max_articles_per_run: 5
-  
-  # Include summary in message (true/false)
   include_summary: true
-  
-  # Summary max length (characters)
   summary_max_length: 280
