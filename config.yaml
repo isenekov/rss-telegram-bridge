@@ -1,3 +1,4 @@
+
 feeds:
   - name: "Новости IGN"
     url: "https://feeds.feedburner.com/ign/news"
@@ -11,7 +12,7 @@ feeds:
     url: "https://www.ign.com/rss/v2/videos/feed"
     enabled: true
 
- - name: "Статьи IGN"
+  - name: "Статьи IGN"
     url: "https://www.ign.com/rss/v2/articles/feed"
     enabled: true
 
