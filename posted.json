@@ -3,6 +3,7 @@
     "00cca78b58b2ea91",
     "017f57c35d087d4c",
     "024e857e5080439f",
+    "036730bcd9ddd1c7",
     "03a9a7b04adc5389",
     "052c27c7c667fecc",
     "052ca6b916afb05b",
@@ -61,6 +62,7 @@
     "2dfa34e05fb38d0c",
     "2ecb54f94c926f4b",
     "2f5f9f70e419f203",
+    "2f945cef7cfa6de1",
     "3361526af6a9ac14",
     "337df4f837e59bf6",
     "347411b2225e3f86",
@@ -419,6 +421,7 @@
     "title:eurogamer:b033a82268a6d02b2274f4bc",
     "title:eurogamer:b21fc48d70bebb425e096608",
     "title:eurogamer:b66392e5d9c5f61f1daa6733",
+    "title:eurogamer:bb35937e3cc951c3817a1e58",
     "title:eurogamer:befd70defded3ae085ebd848",
     "title:eurogamer:c1c91f97e7560cf1f960d9dc",
     "title:eurogamer:c2d3cbc231e2793486f44281",
@@ -481,6 +484,7 @@
     "title:ign:1a4b571c3069afb3a5e8b817",
     "title:ign:1b3b818dfbf31c528d1e3686",
     "title:ign:1bf092ef90ae1c3a79fcf74a",
+    "title:ign:1c95c78c9d14d975ca58424c",
     "title:ign:1d02e4554178336548523be9",
     "title:ign:2244add80ef7c5c11a61261b",
     "title:ign:230ffd2dd5c0d2236937c052",
@@ -965,12 +969,14 @@
     "url:e47b5901b5f917768a0161d3",
     "url:e550b80e7be4aca75b310715",
     "url:e564e8f673ebcc0612bd3a20",
+    "url:e61565264ce8ef5498b3e730",
     "url:e618925763499b0453a416f6",
     "url:e67f7b60f1b3d21040ebf433",
     "url:e6f9c04a802f733a9a8033e5",
     "url:e790e54cb67afa518944edbe",
     "url:e80ffb4c7eedf62c542018bb",
     "url:e8189fb481a3f9f33b1a9096",
+    "url:e94c7a6cc0f4dfa236a89b73",
     "url:e95e16cb6c6b01d6e608800a",
     "url:e98f2908a67eff3fdf475f2e",
     "url:e9efcf8a805d07abaefd4171",
@@ -1009,5 +1015,5 @@
     "url:ffa68f7c0670ee7b5117f210"
   ],
   "state_version": 2,
-  "updated": "2026-11-03T12:01:10.428106+00:00"
+  "updated": "2026-11-03T12:05:36.009741+00:00"
 }
