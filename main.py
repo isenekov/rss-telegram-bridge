@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """RSS to Telegram Bridge: fresh articles, shared limits and deduplication."""
 
+import argparse
 import calendar
 import hashlib
 import html
@@ -23,6 +24,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.yaml"
 POSTED_PATH = BASE_DIR / "posted.json"
+SEND_QUEUE_PATH = BASE_DIR / ".rss_send_queue.json"
 STATE_VERSION = 2
 
 
@@ -182,14 +184,70 @@ def send_message(client, message):
                 continue
             print(f"❌ Telegram API error: {response.status_code} - {response.text[:500]}")
             return False
-        except (httpx.HTTPError, ValueError) as exc:
-            print(f"❌ Telegram request failed: {exc}")
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            print(f"❌ Telegram connection failed: {exc}")
             if attempt < 2:
                 time.sleep(2)
+        except (httpx.HTTPError, ValueError) as exc:
+            # A timeout after sending may mean Telegram accepted the message.
+            # Never blindly retry an ambiguous outcome: it could post twice.
+            print(f"❌ Telegram request outcome uncertain, not retrying: {exc}")
+            return False
     return False
 
 
-def process_feeds():
+def save_delivery_queue(selected, settings):
+    """Build an untracked local queue; Git history is reserved before delivery."""
+    queue = [{
+        "message": render_message(item, settings),
+        "source": item["source"],
+        "category": item["category"],
+        "title": clean_html(item["entry"].get("title", ""))[:70],
+    } for item in selected]
+    temporary = SEND_QUEUE_PATH.with_suffix(".json.tmp")
+    with temporary.open("w", encoding="utf-8") as handle:
+        json.dump(queue, handle, ensure_ascii=False)
+    temporary.replace(SEND_QUEUE_PATH)
+
+
+def publish_delivery_queue():
+    """Send only after the workflow has committed reservations to GitHub."""
+    if not SEND_QUEUE_PATH.exists():
+        raise RuntimeError("Delivery queue missing; refusing to send without reservations")
+    try:
+        with SEND_QUEUE_PATH.open(encoding="utf-8") as handle:
+            queue = json.load(handle)
+        if not isinstance(queue, list) or any(
+            not isinstance(item, dict) or not isinstance(item.get("message"), str)
+            for item in queue
+        ):
+            raise ValueError("Invalid delivery queue")
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Cannot read reserved delivery queue: {exc}") from exc
+
+    # Consume before the first network request: never replay this local queue.
+    SEND_QUEUE_PATH.unlink()
+    sent = 0
+    failed = 0
+    with httpx.Client(timeout=30) as client:
+        for item in queue:
+            if send_message(client, item["message"]):
+                sent += 1
+                print(f"   ✅ Posted [{item['source']} / {item['category']}]: {item['title']}")
+                time.sleep(1.1)
+            else:
+                failed += 1
+                print(f"   ❌ Not delivered [{item['source']}]: {item['title']}")
+
+    print(f"📊 Reserved: {len(queue)}; delivered: {sent}; failed: {failed}")
+    if failed:
+        raise RuntimeError(
+            f"{failed} reserved articles were not confirmed delivered. "
+            "They will not be retried automatically to prevent duplicate posts."
+        )
+
+
+def process_feeds(reserve_before_send=False):
     print(f"🚀 Starting RSS to Telegram Bridge - {datetime.now(timezone.utc).isoformat()}")
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError("Missing Telegram secrets")
@@ -235,6 +293,8 @@ def process_feeds():
 
     if not initialized:
         # First version-2 run: remember all visible items without replaying them.
+        if reserve_before_send:
+            save_delivery_queue([], settings)
         posted.update(all_keys)
         save_state(posted)
         print(f"\n🛡️ Initialized deduplicated history: {len(all_keys)} keys, "
@@ -255,6 +315,19 @@ def process_feeds():
     # Most recent 40 across every source, then send those chronologically.
     new_items.sort(key=lambda x: x["date"], reverse=True)
     selected = sorted(new_items[:max_per_run], key=lambda x: x["date"])
+
+    if reserve_before_send:
+        # At-most-once: a successful Git push must precede any Telegram request.
+        save_delivery_queue(selected, settings)
+        for item in selected:
+            posted.update(item["keys"])
+        if len(posted) != original_count:
+            save_state(posted)
+        print(f"📊 RSS entries scanned: {fetched_count}")
+        print(f"   Fresh unique articles: {len(new_items)}")
+        print(f"   Reserved for publishing: {len(selected)} (limit: {max_per_run})")
+        print(f"   Total tracked keys: {len(posted)}")
+        return
 
     sent = 0
     with httpx.Client(timeout=30) as client:
@@ -283,4 +356,14 @@ def process_feeds():
 
 
 if __name__ == "__main__":
-    process_feeds()
+    parser = argparse.ArgumentParser(description="RSS to Telegram Bridge")
+    phase = parser.add_mutually_exclusive_group()
+    phase.add_argument("--prepare", action="store_true",
+                       help="Reserve article IDs before publishing")
+    phase.add_argument("--publish", action="store_true",
+                       help="Publish a locally prepared, already reserved queue")
+    args = parser.parse_args()
+    if args.publish:
+        publish_delivery_queue()
+    else:
+        process_feeds(reserve_before_send=args.prepare)
