@@ -325,6 +325,7 @@
     "67707c421b18b308",
     "677a36e5f527df53",
     "678fe8a03bf5ab7f",
+    "6884c1fc355c31a2",
     "68e76a66d62c7e13",
     "6984d901889b6b1c",
     "69b3ae8db6ccc7a9",
@@ -880,6 +881,7 @@
     "title:eurogamer:87b14e12c443acbb247da30d",
     "title:eurogamer:8950efc56426f60b2c42e375",
     "title:eurogamer:8b8e8b317185d46149396055",
+    "title:eurogamer:8da9d2955c9a804c80b84856",
     "title:eurogamer:8e3bfd87337107c9dc162a2d",
     "title:eurogamer:8f12f103530ce78860e77f75",
     "title:eurogamer:9102e82358db3bf27e4ab078",
@@ -1601,6 +1603,7 @@
     "url:0232e5c358ddf69f1c6190bd",
     "url:02a0f73c53d122736919087c",
     "url:02c98f39a4189143b66bdd13",
+    "url:02e118f5baf3319afc76c770",
     "url:03d2df2c792c36f0ee777187",
     "url:04588289d02fa79f4a55287c",
     "url:0462b0bdeab7bbe21e7a5a31",
@@ -2389,5 +2392,5 @@
     "url:ffb7b06ea1a2328fa96adfd9"
   ],
   "state_version": 2,
-  "updated": "2026-11-07T16:05:33.869454+00:00"
+  "updated": "2026-11-07T16:55:37.598703+00:00"
 }
