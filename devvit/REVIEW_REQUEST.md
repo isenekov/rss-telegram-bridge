@@ -2,6 +2,10 @@
 
 ## Request
 
+Registered Devvit app: `gfar34`. Reddit developer account: `u/MaleficentWay4341`.
+The operator has confirmed CLI authentication and the app listing; these do
+not establish approval for the proposed integration.
+
 Please confirm whether this proposed integration is permitted on Devvit and
 what additional approvals or permissions are required before any export.
 
@@ -44,7 +48,6 @@ been verified under the developer's authenticated installation.
 
 ## Information the operator must complete before submission
 
-- Registered Devvit app slug and Reddit developer account.
 - Name of the operator-owned test subreddit.
 - Whether the destination channel is public or private, its intended audience,
   and whether it carries advertising, sponsorship or other commercial activity.

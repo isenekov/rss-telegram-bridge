@@ -1,6 +1,6 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
-  "name": "glr-channel-bridge",
+  "name": "gfar34",
   "server": { "dir": "dist/server", "entry": "index.cjs" },
   "permissions": {
     "reddit": { "enable": true, "scope": "user" },
