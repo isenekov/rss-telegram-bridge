@@ -57,9 +57,29 @@ another retention batch of 100 was removed. This verifies checkpoint/record
 read-back and deduplication for the observed baseline across consecutive live
 reads. It does not yet test queuing a genuinely new eligible post exactly once.
 
-These logs do not establish persistence across a new playtest session or app
-version, recovery after a Reddit server failure, complete source coverage, or
-permission for the proposed use/export. Stopping the CLI alone leaves the
+After receiving the playtest-restart instructions, the operator supplied a third
+manual-read log:
+
+```json
+{"event":"manual_read","status":"ok","bootstrap":false,"fetched":500,"added":0,"duplicates":300,"checked":0,"unavailable":0,"unknown":0,"pruned":100,"telegramSent":0}
+```
+
+The checkpoint remained readable and 300 baseline records were recognized,
+consistent with the two preceding 100-record retention batches. The third run
+also added zero posts and pruned 100 old records. The operator did not include
+the requested version line or restart transcript, so a version upgrade or a new
+playtest session is not independently established by this JSON alone.
+
+All three reads had `added: 0`: live queuing of a new eligible source post and
+subsequent deduplication of that pending ID remain untested. The next manual
+test must observe an ordinary, available, non-NSFW, non-stickied source post
+created after bootstrap, read it once, then read again after at least 70 seconds.
+Expect a positive added count once; if no further eligible posts appeared, the
+next read should have `added: 0`. Keep polling disabled during this manual test.
+
+These logs do not establish persistence across an app version upgrade, recovery
+after a Reddit server failure, complete source coverage, or permission for the
+proposed use/export. Stopping the CLI alone leaves the
 installed version running; a new session is not proof of a server crash/restart.
 See [the playtest lifecycle](https://developers.reddit.com/docs/guides/tools/playtest).
 The evidence was supplied by the operator, not independently collected from their

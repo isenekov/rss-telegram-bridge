@@ -28,10 +28,11 @@ HTTP permission, no Telegram credentials, no delivery route and no export.
 Local unit tests use synthetic posts. On 2026-11-13 (Moscow), the operator supplied
 a successful manual-read log from the playtest installation: 500 public source
 posts fetched, an initial baseline established, zero posts queued and zero
-Telegram messages sent. A second manual read loaded the saved checkpoint,
-recognized 400 existing IDs and added zero posts, while pruning another batch
-of old metadata. New-post queuing/deduplication, persistence across playtest
-sessions/versions and scheduled polling remain to be verified. Both logs and their limits are recorded in
+Telegram messages sent. Two subsequent manual reads loaded the saved checkpoint,
+recognized 400 and then 300 existing IDs, and added zero posts. Each run pruned
+100 old metadata records. New-post queuing/deduplication, confirmed persistence
+across playtest sessions/versions and scheduled polling remain to be verified.
+All three logs and their limits are recorded in
 [TEST_REPORT.md](TEST_REPORT.md); technical access is not presented as policy approval.
 
 ## Questions needing a written answer
