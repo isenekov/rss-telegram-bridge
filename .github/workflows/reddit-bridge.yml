@@ -1,0 +1,97 @@
+name: Reddit API to Telegram (setup and manual run)
+
+on:
+  push:
+    paths:
+      - "reddit_bridge.py"
+      - ".github/workflows/reddit-bridge.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "self-test: code only; probe: verify approved Reddit API; publish: reserve then send"
+        required: true
+        default: "self-test"
+        type: choice
+        options:
+          - self-test
+          - probe
+          - publish
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reddit-telegram-bridge
+  cancel-in-progress: false
+
+jobs:
+  reddit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Test Reddit parser and message formatting
+        run: python reddit_bridge.py --self-test
+
+      - name: Probe approved Reddit OAuth access
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'probe' }}
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+        run: python reddit_bridge.py --probe
+
+      - name: Prepare Reddit posts (no Telegram calls yet)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' }}
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+        run: python reddit_bridge.py --prepare
+
+      - name: Persist Reddit history BEFORE Telegram delivery
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f reddit_posted.json
+          if git diff --cached --quiet; then
+            echo "No new Reddit history to save."
+            exit 0
+          fi
+
+          git commit -m "Reserve Reddit posts before Telegram delivery"
+          for attempt in 1 2 3 4 5; do
+            echo "Saving Reddit history (attempt ${attempt}/5)"
+            git fetch origin main
+            git rebase origin/main || {
+              git rebase --abort
+              echo "::error::Cannot safely rebase Reddit history. Delivery blocked."
+              exit 1
+            }
+            if git push origin HEAD:main; then
+              echo "Reddit history saved. Sending is now safe."
+              exit 0
+            fi
+            if [ "${attempt}" -eq 5 ]; then
+              echo "::error::Could not save Reddit history; Telegram delivery blocked."
+              exit 1
+            fi
+            sleep $((5 * attempt))
+          done
+
+      - name: Send reserved Reddit posts to Telegram
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'publish' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python reddit_bridge.py --publish
