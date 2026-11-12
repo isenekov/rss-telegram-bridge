@@ -45,18 +45,33 @@ is at least 30 days old is removed from the app's Redis, not from Reddit. A late
 read skips pruned historical IDs using the checkpoint. Therefore a repeated
 500-result listing need not report 500 duplicates.
 
-This log alone does not establish repeated-run deduplication, persistence after
-restart, complete source coverage, or permission for the proposed use/export.
-The evidence was supplied by the operator, not independently collected from
-their authenticated Reddit session.
+The operator then supplied a second manual-read log:
+
+```json
+{"event":"manual_read","status":"ok","bootstrap":false,"fetched":500,"added":0,"duplicates":400,"checked":0,"unavailable":0,"unknown":0,"pruned":100,"telegramSent":0}
+```
+
+The second read loaded the saved checkpoint and recognized 400 stored IDs.
+Historical entries removed by retention were not re-queued (`added: 0`), and
+another retention batch of 100 was removed. This verifies checkpoint/record
+read-back and deduplication for the observed baseline across consecutive live
+reads. It does not yet test queuing a genuinely new eligible post exactly once.
+
+These logs do not establish persistence across a new playtest session or app
+version, recovery after a Reddit server failure, complete source coverage, or
+permission for the proposed use/export. Stopping the CLI alone leaves the
+installed version running; a new session is not proof of a server crash/restart.
+See [the playtest lifecycle](https://developers.reddit.com/docs/guides/tools/playtest).
+The evidence was supplied by the operator, not independently collected from their
+authenticated Reddit session.
 
 ## Remaining checks
 
 | Check | Status / next step |
 | --- | --- |
-| Repeated-run deduplication and checkpoint read-back | Repeat manual read after at least 70 seconds; expect bootstrap false and no repeated pending IDs |
-| Discovery of a new source post | Observe an eligible post created after bootstrap; it should be added once |
-| Live Redis persistence after restart | Restart playtest and repeat the manual read without resetting Redis |
+| Discovery and deduplication of a new source post | Observe an eligible post created after bootstrap, then repeat; the same ID should be added once |
+| Live Redis persistence across playtest sessions/versions | Record the playtest version, restart playtest, and read again without resetting Redis; expect bootstrap false |
+| Recovery after server/storage failures on Reddit | Not fault-injected live; covered only by local contract tests |
 | Five-minute scheduler execution on Reddit | Observe after enabling read-only polling |
 | Guaranteed deletion detection | Not claimed; periodic checks are best effort |
 | Reddit approval of this use and external transfer | Not requested or obtained |
