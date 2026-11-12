@@ -1,0 +1,8 @@
+{
+  "name": "RSS bridge + Devvit development",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24-bookworm",
+  "postCreateCommand": "npm --prefix devvit ci",
+  "customizations": {
+    "vscode": { "settings": { "terminal.integrated.defaultProfile.linux": "bash" } }
+  }
+}

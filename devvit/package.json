@@ -1,0 +1,29 @@
+{
+  "dependencies": {
+    "@devvit/web": "0.15.3",
+    "@hono/node-server": "2.1.8",
+    "hono": "4.13.18"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "devvit": "0.15.3",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  },
+  "name": "glr-channel-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only Devvit collector for the proposed GLR to Telegram bridge",
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "scripts": {
+    "auth": "devvit login --copy-paste",
+    "check": "node scripts/validate-config.mjs && tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "build": "esbuild src/server/index.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/server/index.cjs",
+    "dev": "npm run build && devvit playtest",
+    "verify": "npm run check && npm test && npm run build"
+  }
+}

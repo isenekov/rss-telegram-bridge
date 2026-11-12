@@ -1,0 +1,50 @@
+{
+  "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
+  "name": "glr-channel-bridge",
+  "server": { "dir": "dist/server", "entry": "index.cjs" },
+  "permissions": {
+    "reddit": { "enable": true, "scope": "user" },
+    "redis": true,
+    "http": { "enable": false, "domains": [] }
+  },
+  "scheduler": {
+    "tasks": {
+      "read-new-posts": {
+        "endpoint": "/internal/scheduler/read",
+        "cron": "*/5 * * * *"
+      }
+    }
+  },
+  "settings": {
+    "global": {
+      "installationSubreddit": {
+        "type": "string",
+        "label": "Your own test subreddit (without r/)",
+        "defaultValue": ""
+      }
+    },
+    "subreddit": {
+      "pollingEnabled": {
+        "type": "boolean",
+        "label": "Collect public post IDs every 5 minutes (never send to Telegram)",
+        "defaultValue": false
+      }
+    }
+  },
+  "menu": {
+    "items": [
+      {
+        "label": "GLR: read source now (no sending)",
+        "forUserType": "moderator",
+        "location": "subreddit",
+        "endpoint": "/internal/menu/read"
+      },
+      {
+        "label": "GLR: collector status",
+        "forUserType": "moderator",
+        "location": "subreddit",
+        "endpoint": "/internal/menu/status"
+      }
+    ]
+  }
+}
