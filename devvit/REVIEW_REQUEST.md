@@ -9,8 +9,8 @@ not establish approval for the proposed integration.
 Please confirm whether this proposed integration is permitted on Devvit and
 what additional approvals or permissions are required before any export.
 
-The app would be installed in a private test subreddit controlled by its
-developer, not in r/GamingLeaksAndRumours. The developer is not a moderator of
+The read-only app is installed in the developer's private test subreddit
+`r/gfar34_dev`, not in r/GamingLeaksAndRumours. The developer is not a moderator of
 r/GamingLeaksAndRumours and has not obtained permission to install an app there.
 It would read that community's public new-post listing every five minutes using
 `reddit.getNewPosts({ subredditName: "GamingLeaksAndRumours" })`. It would not
@@ -22,11 +22,15 @@ public title and a link to the original Reddit post, without author names,
 post bodies, comments, images or videos. It would not train models, profile
 users, sell datasets or use private Reddit content.
 
-The submitted code currently performs only read-only collection and stores
+The current code prepared for review performs only read-only collection and stores
 minimal operational metadata in installation-scoped Redis. It has no enabled
 HTTP permission, no Telegram credentials, no delivery route and no export.
-Local unit tests use synthetic posts. Live cross-community access has not yet
-been verified under the developer's authenticated installation.
+Local unit tests use synthetic posts. On 2026-11-13 (Moscow), the operator supplied
+a successful manual-read log from the playtest installation: 500 public source
+posts fetched, an initial baseline established, zero posts queued and zero
+Telegram messages sent. Repeat-read deduplication, restart persistence and the
+scheduled polling remain to be verified. The log and its limits are recorded in
+[TEST_REPORT.md](TEST_REPORT.md); technical access is not presented as policy approval.
 
 ## Questions needing a written answer
 
@@ -48,7 +52,6 @@ been verified under the developer's authenticated installation.
 
 ## Information the operator must complete before submission
 
-- Name of the operator-owned test subreddit.
 - Whether the destination channel is public or private, its intended audience,
   and whether it carries advertising, sponsorship or other commercial activity.
 - Public support/removal contact and finalized Terms/Privacy URLs.

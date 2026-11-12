@@ -23,14 +23,40 @@ pagination bounds, source and storage failures, a lost commit response, invalid
 state, lease loss, execution budget, retention, best-effort availability checks,
 and title/link formatting. They do not prove deployed Redis behavior.
 
-## Not yet verified
+## Owner-reported playtest evidence — 2026-11-13 (Moscow)
+
+The operator completed CLI authentication as `u/MaleficentWay4341`, listed the
+registered app `gfar34`, and supplied the playtest URL for
+[r/gfar34_dev](https://www.reddit.com/r/gfar34_dev/?playtest=gfar34).
+Their Codespaces run of `npm run verify` passed all 22 tests and built the server;
+their clean install reported zero dependency vulnerabilities.
+
+The first manual read produced the following operator-supplied log:
+
+```json
+{"event":"manual_read","status":"ok","bootstrap":true,"fetched":500,"added":0,"duplicates":0,"checked":0,"unavailable":0,"unknown":0,"pruned":100,"telegramSent":0}
+```
+
+This is evidence of a successful live read of the configured foreign source and
+completion of the bootstrap commit/prune calls without a reported error. The
+500 results match the bounded scan limit; no historical posts were queued.
+`pruned: 100` is the per-run retention batch: metadata whose post creation time
+is at least 30 days old is removed from the app's Redis, not from Reddit. A later
+read skips pruned historical IDs using the checkpoint. Therefore a repeated
+500-result listing need not report 500 duplicates.
+
+This log alone does not establish repeated-run deduplication, persistence after
+restart, complete source coverage, or permission for the proposed use/export.
+The evidence was supplied by the operator, not independently collected from
+their authenticated Reddit session.
+
+## Remaining checks
 
 | Check | Status / next step |
 | --- | --- |
-| Developer login and existing app identity | Owner enters OAuth code in their terminal |
-| Installation in owner's test subreddit | Requires that account and subreddit name |
-| Live cross-community `getNewPosts` access | Manual playtest after authorized access |
-| Live Redis transactions and restart persistence | Repeat the manual read during playtest |
+| Repeated-run deduplication and checkpoint read-back | Repeat manual read after at least 70 seconds; expect bootstrap false and no repeated pending IDs |
+| Discovery of a new source post | Observe an eligible post created after bootstrap; it should be added once |
+| Live Redis persistence after restart | Restart playtest and repeat the manual read without resetting Redis |
 | Five-minute scheduler execution on Reddit | Observe after enabling read-only polling |
 | Guaranteed deletion detection | Not claimed; periodic checks are best effort |
 | Reddit approval of this use and external transfer | Not requested or obtained |
