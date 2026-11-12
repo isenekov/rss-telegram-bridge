@@ -34,6 +34,13 @@ Use Node.js 24.18+ in Codespaces or another supported cloud environment. Run
 sign in personally using `npm run auth`, select your registered app name, and
 playtest in a subreddit you own. No secret or OAuth code belongs in Git or chat.
 
+The pinned Devvit CLI currently needs scoped overrides for `isomorphic-git`
+1.38.6 and `inquirer` 9.3.8 to avoid vulnerable transitive versions. The CLI and
+SDK remain at 0.15.3. The reviewed install scripts for the two locked esbuild
+versions and protobufjs are explicitly allowed by version in `package.json`.
+Do not run `npm audit fix --force`: it proposes changing the Devvit major version.
+Review these overrides again when upgrading the official CLI.
+
 After installation, the developer sets `installationSubreddit` via
 `npx devvit settings set installationSubreddit`. A moderator with full
 permissions in that test subreddit uses its **GLR: read source now (no sending)**

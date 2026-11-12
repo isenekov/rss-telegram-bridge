@@ -9,6 +9,11 @@
   method signatures and the server adapter.
 - CommonJS server bundle built successfully with esbuild.
 - `devvit login --help` confirms support for `--copy-paste` without localhost.
+- Dependency follow-up on 2026-11-13: `npm audit` reports zero vulnerabilities
+  after scoped CLI overrides (`isomorphic-git` 1.38.6, `inquirer` 9.3.8).
+  The CLI and SDK versions remain 0.15.3; all 22 tests and the build still pass.
+  The exact locked esbuild/protobufjs install scripts were reviewed and declared
+  in `allowScripts`. Deprecated-package warnings elsewhere in the CLI may remain.
 - Git diff confirmed no edits to `main.py`, `config.yaml`, `posted.json`,
   `reddit_bridge.py`, `requirements.txt`, `rss-bridge.yml` or the RSS test workflow.
 
