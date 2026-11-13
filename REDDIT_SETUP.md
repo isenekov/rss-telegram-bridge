@@ -1,63 +1,167 @@
-# Reddit / r/GamingLeaksAndRumours — optional integration
+# Reddit → Telegram: Devvit, stage 1 (read-only)
 
-This is separate from IGN / Eurogamer. The existing RSS workflow, RSS feeds,
-`main.py`, `config.yaml` and `posted.json` are unchanged.
+Рабочие IGN/Eurogamer, `main.py`, `config.yaml`, `posted.json`, их оформление,
+защита от дублей и лимит 40 не изменены.
 
-## Reddit API requirement (November 2026)
+## Что подготовлено
 
-Reddit requires explicit approval for external Data API access. Reddit stopped
-accepting *new* public Data API access requests on October 31, 2026. Merely
-creating an OAuth client ID and secret does not grant permission. Only use this
-workflow with an already approved Reddit Data API application.
+Приложение находится в `devvit/` и предназначено для установки **в ваш собственный
+тестовый сабреддит**. Источник чтения фиксирован: `GamingLeaksAndRumours`.
+Используется официальный `reddit.getNewPosts`, а не RSS, HTML-парсинг, JSON-обход
+авторизации или старый OAuth Data API.
 
-Official sources:
-- https://support.reddithelp.com/hc/en-us/articles/54353370049684-Changelog-October-8-2026
-- https://support.reddithelp.com/hc/en-us/articles/16471395473812-Moderation-Bots-Tooling
-- https://developers.reddit.com/docs/guides/faq
+Первый запуск создаёт исходную точку и не ставит старые посты в очередь. Повторные
+запуски сохраняют только новые ID. Redis хранит метаданные, но не тексты, заголовки
+или авторов. Очередь и контрольная точка сохраняются атомарно. Есть блокировка
+параллельных запусков, повторное чтение с перекрытием 10 минут и остановка при
+неполном охвате окна в 500 публикаций. Подробности и ограничения: [README](devvit/README.md).
 
-Existing approved clients must follow Reddit's 2027 migration requirements.
+Расписание Devvit — `*/5 * * * *`. Сбор выключен по умолчанию. Даже при его
+включении **отправка в Telegram невозможна**: в сборке нет маршрута отправки,
+токена бота и разрешённого HTTP-доступа. GitHub Actions только проверяет код.
 
-## Configure GitHub Actions secrets (do not paste credentials into chat)
+## 1. Открыть облачную среду
 
-Go to repository > Settings > Secrets and variables > Actions > New repository secret.
+Используйте ветку с этими изменениями в GitHub Codespaces. В репозитории добавлен
+`.devcontainer/devcontainer.json` с Linux и Node.js 24. При открытии существующего
+Codespace выберите эту ветку и выполните **Codespaces: Rebuild Container**.
+Локальный Node.js на macOS Big Sur не требуется.
 
-Add:
-- `REDDIT_CLIENT_ID`: client ID for an **already approved** OAuth application.
-- `REDDIT_CLIENT_SECRET`: OAuth client secret for that application.
-- `REDDIT_USER_AGENT`: honest, descriptive user agent, such as
-  `linux:isenekov-reddit-telegram:v1.0 (by /u/YOUR_REDDIT_USERNAME)`.
+В терминале Codespaces, из корня репозитория:
 
-The existing `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are used for
-publishing and do not need to be changed.
+```bash
+cd devvit
+node --version
+npm ci
+npm run verify
+```
 
-## Safe testing
+Нужен Node.js 24.18.0 или новее из ветки 24. Зависимости зафиксированы lock-файлом.
 
-Actions > **Reddit API to Telegram (setup and manual run)** > Run workflow.
+## 2. Авторизация — выполняет владелец аккаунта
 
-1. `self-test` (default): tests message formatting with a synthetic post.
-   Does **not** access Reddit, send Telegram messages or change history.
-2. `probe`: uses Reddit OAuth to read the latest 100 posts (up to 5 titles
-   printed). Does **not** send Telegram messages or change history.
-   This is the required check for real API access.
-3. `publish`: first run initializes `reddit_posted.json` with current
-   post IDs and sends **nothing**; subsequent manual runs send up to 10
-   new posts from the last 2 hours.
+```bash
+npm run auth
+```
 
-The `publish` workflow commits hashed post IDs to GitHub **before**
-contacting Telegram, and retries Git pushes after fetching/rebasing on current
-`main`. It will not send if the history can't be safely saved.
+Это запускает `devvit login --copy-paste`, без возврата браузера на локальный
+`localhost:65010`. Откройте выданную CLI ссылку, авторизуйтесь и введите полученный
+код **только в интерактивный запрос терминала Codespaces**. Не используйте вставку
+как shell-команду, не добавляйте код в аргументы и не отправляйте его в чат.
+При проблеме с буфером используйте обычное ручное выделение/копирование кода.
 
-No automatic schedule is enabled until OAuth `probe` and a manual
-end-to-end run are successful. This prevents noisy failures when approval
-or secrets are missing.
+После завершения:
 
-## Caveats
+```bash
+npx devvit whoami
+```
 
-- At-most-once delivery is preferred over automatic retries: if Telegram fails
-  after IDs were reserved, a post may be omitted instead of sent twice.
-- Posts from other subreddits are not collected.
-- Only post titles and Reddit permalinks are sent; only hashed IDs and
-  creation timestamps are retained in GitHub, with a 48-hour rolling window.
-- Follow Reddit's rules on removed/deleted content. Publishing a title in an
-  external Telegram channel may require a deletion/removal procedure.
-- This workflow does not bypass Reddit authentication, permissions or rate limits.
+Не выводите файл `~/.devvit/token`. Он не должен попадать в репозиторий.
+
+## 3. Существующее приложение и собственный сабреддит
+
+В `devvit/devvit.json` уже указано зарегистрированное приложение `gfar34`,
+которое CLI показывает после входа под `u/MaleficentWay4341`. Создавать второе
+приложение не нужно. `glr-channel-bridge` в `package.json` — только имя npm-пакета.
+
+Из папки `devvit` запустите:
+
+```bash
+npm run build
+npx devvit playtest
+```
+
+CLI использует тестовый сабреддит приложения или автоматически создаёт новый
+приватный сабреддит и назначает вас его модератором. Имя и ссылку берите из вывода
+`Playtest ready`, не угадывайте их. Команда загружает и устанавливает тестовую
+версию; это ещё не проверка чтения источника и не подтверждение одобрения Reddit.
+
+Если у вас уже есть другое собственное тестовое сообщество с полными правами
+модератора и менее чем 200 подписчиками, можно явно передать его имя:
+`npx devvit playtest ИМЯ_ВАШЕГО_САБРЕДДИТА`. Настройки `DEVVIT_SUBREDDIT` и
+`dev.subreddit`, если вы ранее их задавали, также меняют выбранное сообщество.
+Ни одна из этих настроек не должна указывать на `GamingLeaksAndRumours`.
+Подробности: [официальная документация playtest](https://developers.reddit.com/docs/guides/tools/playtest).
+
+В другом терминале Codespaces, также из папки `devvit`:
+
+```bash
+npx devvit settings set installationSubreddit
+```
+
+Введите имя **своего тестового сабреддита из вывода playtest** без `r/` в
+интерактивном запросе. Это не имя источника и не slug приложения `gfar34`.
+Оставьте `pollingEnabled` выключенным до ручной проверки. Остановка playtest
+через Ctrl+C не удаляет установленную версию приложения.
+
+Перед фактическим чтением убедитесь, что доступ для данного приложения разрешён
+Reddit. Существование метода SDK и успешный вход сами по себе не подтверждают
+право на внешний экспорт данных. Если платформа отказывает в cross-community
+чтении, остановитесь и уточните доступ у Reddit; обходов в проекте нет.
+
+## 4. Проверка чтения и дедупликации на Reddit
+
+Автосбор `pollingEnabled` пока оставьте выключенным.
+
+1. В меню своего сабреддита выберите **GLR: read source now (no sending)**.
+   В логах ожидается `bootstrap: true`, `added: 0`, `telegramSent: 0`.
+2. Через минуту повторите. Для тех же публикаций ожидаются дубли и `added: 0`.
+3. После появления нового поста в источнике выполните чтение ещё раз.
+   Должен появиться один новый ID; следующий запуск не должен добавлять его снова.
+4. Перезапустите playtest и повторите чтение: Redis должен сохранить историю.
+5. Откройте **GLR: collector status** и проверьте количество ожидающих ID.
+6. При разрешённом доступе включите `pollingEnabled` в настройках установки и
+   проверьте несколько событий `scheduled_read` с интервалом около пяти минут.
+   Scheduler не обещает точное время выполнения.
+
+Исходные публикации не нужно создавать, изменять или удалять для проверки.
+Ошибки сети и доступа классифицируются как `unknown`, а не доказанное удаление.
+Перепроверка обрабатывает до 10 ID за запуск, с целевым интервалом один час;
+при накоплении очереди фактический интервал больше. Удаления обнаруживаются
+только по доступным публичным признакам, без гарантии полноты.
+
+## 5. Проверка Reddit перед Telegram
+
+Для проверки самого Telegram без ожидания нового поста доступна отдельная
+команда Codespaces: `npm run telegram:test`. Она отправляет только заранее
+заданный синтетический текст и ссылку на репозиторий, не читает Reddit и не
+включает отправку из Devvit. Токен существующего бота и канал владелец вводит
+в скрытые запросы терминала. [Инструкция и ограничения повторов](devvit/TELEGRAM_TEST.md).
+
+Подготовлены [запрос на проверку](devvit/REVIEW_REQUEST.md),
+[описание приложения](devvit/README.md), [проект Privacy](devvit/PRIVACY.md)
+и [проект Terms](devvit/TERMS.md). Запрос **не отправлен**, одобрение **не получено**.
+Владелец должен дополнить данные о тестовом сабреддите, назначении и
+публичности канала, коммерческом использовании и контакте для удаления данных.
+
+Нужно подтвердить допустимость именно чтения чужого сообщества и передачи
+заголовков/ссылок в Telegram. То, что `api.telegram.org` входит в общий allowlist,
+не разрешает автоматически такую интеграцию. Периодические проверки не заменяют
+обязательства по удалению контента; способ исполнения нужно согласовать.
+
+До подтверждения допустимости не добавляйте разрешение HTTP, Telegram Secrets
+или маршруты отправки и не выдавайте этот прототип за готовую интеграцию.
+Не запускайте `devvit publish` от имени владельца без его участия в подаче.
+
+## Следующий этап после разрешения
+
+Использовать существующего бота через Devvit encrypted secrets, вводимые
+владельцем лично. GitHub не раскрывает уже сохранённые Secrets, поэтому токен
+потребуется ввести в Devvit отдельно, не менять его в работающем RSS-боте.
+
+Отдельно реализовать и протестировать доставку, сохранение Telegram message ID,
+разбор подтверждённых отказов/неопределённого исхода, снятие удалённых публикаций
+и ручное разрешение спорных отправок. После timeout нельзя слепо повторять
+`sendMessage`: сообщение уже могло быть доставлено. Для сообщений старше 48 часов
+потребуется согласованный способ удаления содержимого и проверка на реальном боте.
+
+Перед включением отправки установите новую исходную точку, чтобы накопленные
+в режиме чтения ID не превратились в массовую рассылку старых публикаций.
+Сначала — отдельный тестовый чат и ручной сквозной тест; автоматическая публикация
+только после проверки и явного решения владельца.
+
+## Старый Python-вариант
+
+`reddit_bridge.py` сохранён как исторический вариант для ранее одобренного Data
+API. Новый `reddit-bridge.yml` его не запускает. Старые Reddit client ID/secret
+для Devvit не нужны. Рабочий `rss-bridge.yml` не затронут.
