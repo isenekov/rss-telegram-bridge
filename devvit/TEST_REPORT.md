@@ -3,7 +3,7 @@
 ## Completed locally
 
 - Node.js 24.22.1; Devvit CLI and SDK 0.15.3; locked npm dependencies.
-- `npm run verify`: 22 tests passed, no failures.
+- `npm run verify`: 35 tests passed, no failures (22 collector + 13 Telegram tests).
 - Official SDK JSON Schema validation passed.
 - TypeScript check passed against the installed SDK, including Reddit and Redis
   method signatures and the server adapter.
@@ -85,7 +85,30 @@ See [the playtest lifecycle](https://developers.reddit.com/docs/guides/tools/pla
 The evidence was supplied by the operator, not independently collected from their
 authenticated Reddit session.
 
-## Remaining checks
+## Manual Telegram diagnostic — prepared, live send pending
+
+On 2026-11-13 the operator asked to proceed with Telegram without waiting for a
+new source post. A separate `npm run telegram:test` command was implemented. It
+sends only a fixed synthetic heading and repository URL; no Reddit content is
+read or exported. The Telegram transport is not imported into the Devvit server.
+
+All 35 tests, schema validation, TypeScript and the unchanged server build pass.
+Telegram tests inject a fake HTTP client and make no real Bot API calls. They
+cover target/permission validation, request formatting, explicit 4xx rejection,
+429 cooldown, timeout/5xx/malformed/redirect ambiguity, concurrent attempts,
+durable receipts across instances, crash after reservation, lost receipt writes,
+and invalid or unwritable state. The terminal preview and hidden-input behavior
+were checked with a deliberately invalid dummy token; it was not echoed and was
+rejected before any network request. No operator credential was used.
+
+The built Devvit server contains no smoke-test text, diagnostic event or Telegram
+Bot API URL. Its HTTP permission remains disabled and polling defaults to off.
+RSS files/workflows and `posted.json` remain unchanged. Real Telegram delivery is
+not yet verified; the owner must run the interactive command in their Codespace.
+This test will not by itself verify the later Devvit-to-Telegram HTTP path or
+the Reddit export permission. See [TELEGRAM_TEST.md](TELEGRAM_TEST.md).
+
+## Remaining live checks
 
 | Check | Status / next step |
 | --- | --- |
@@ -95,7 +118,8 @@ authenticated Reddit session.
 | Five-minute scheduler execution on Reddit | Observe after enabling read-only polling |
 | Guaranteed deletion detection | Not claimed; periodic checks are best effort |
 | Reddit approval of this use and external transfer | Not requested or obtained |
-| Telegram delivery and recovery | Not implemented/enabled in this review build |
+| Telegram-only synthetic delivery | Implemented outside Devvit; owner enters credentials in Codespaces and verifies receipt |
+| Reddit → Telegram delivery and recovery | Not connected/enabled in the deployed review build |
 
 GitHub Actions runs the same offline checks with read-only repository permissions
 and no secrets. Source access, app registration, review submission and delivery

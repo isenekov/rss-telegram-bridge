@@ -22,7 +22,7 @@ public title and a link to the original Reddit post, without author names,
 post bodies, comments, images or videos. It would not train models, profile
 users, sell datasets or use private Reddit content.
 
-The current code prepared for review performs only read-only collection and stores
+The deployed Devvit server prepared for review performs only read-only collection and stores
 minimal operational metadata in installation-scoped Redis. It has no enabled
 HTTP permission, no Telegram credentials, no delivery route and no export.
 Local unit tests use synthetic posts. On 2026-11-13 (Moscow), the operator supplied
@@ -34,6 +34,13 @@ recognized 400 and then 300 existing IDs, and added zero posts. Each run pruned
 across playtest sessions/versions and scheduled polling remain to be verified.
 All three logs and their limits are recorded in
 [TEST_REPORT.md](TEST_REPORT.md); technical access is not presented as policy approval.
+
+The repository also contains a separate manual Codespaces Telegram diagnostic.
+It sends only a fixed synthetic test heading and the GitHub repository URL,
+without calling Reddit or reading its stored data. Its credentials are entered
+interactively by the operator, and its local receipt journal is separate from
+Devvit Redis. This command is not included in the Devvit server bundle, does not
+enable Devvit HTTP access, and is not evidence of an approved Reddit export.
 
 ## Questions needing a written answer
 

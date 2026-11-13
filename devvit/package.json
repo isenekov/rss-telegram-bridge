@@ -24,6 +24,7 @@
     "test": "node --test test/*.test.ts",
     "build": "esbuild src/server/index.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/server/index.cjs",
     "dev": "npm run build && devvit playtest",
+    "telegram:test": "node scripts/telegram-test.ts",
     "verify": "npm run check && npm test && npm run build"
   },
   "overrides": {

@@ -5,3 +5,4 @@ dist/
 !.env.example
 .devvit/
 *.log
+.telegram-test-state/

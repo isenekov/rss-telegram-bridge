@@ -6,10 +6,16 @@ installed **only in the operator's own test subreddit**. The operator is not a
 moderator of the source subreddit. This is not a moderation tool and requests
 only the user-scoped Reddit capability.
 
-**This build cannot send anything to Telegram.** It has no delivery endpoint,
+**The deployed Devvit server cannot send anything to Telegram.** It has no delivery endpoint,
 Telegram credentials, or enabled HTTP capability. Source access and the proposed
 external transfer must be assessed by Reddit before a delivery build is enabled.
 App registration and working SDK methods do not establish policy approval.
+
+A separate, interactive Codespaces command, `npm run telegram:test`, can send
+one fixed synthetic message through the operator's existing Telegram bot.
+It is not part of the Devvit server bundle, reads no Reddit data and is not
+connected to any scheduler or workflow. See [the manual Telegram test](TELEGRAM_TEST.md)
+for hidden credential entry, its local durable journal and ambiguous-outcome limits.
 
 ## Implemented functionality
 
@@ -25,7 +31,7 @@ App registration and working SDK methods do not establish policy approval.
   load, checks take longer. Explicit removal flags mean unavailable; API errors
   mean unknown and retry with backoff. No `onPostDelete` subscription is used.
 - A tested message formatter for a future stage: title and original permalink
-  only. It is not connected to any external sender.
+  only. It is not connected to any external sender in the deployed app.
 
 ## Setup and operation
 
