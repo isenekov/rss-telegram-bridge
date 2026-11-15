@@ -91,10 +91,10 @@ ID теста, ID попытки, время, результат и Telegram mes
 
 ## Перед реальным Reddit → Telegram
 
-Остаётся получить подтверждение допустимости использования, настроить секреты
-и HTTP-разрешение уже в Devvit, связать транспорт с очередью Redis и проверить
-доставку/удаление на отдельной тестовой установке. Синтетический тест не заменяет
-эти шаги и не включает отправку накопленных Reddit ID.
+Версия с транспортом и очередью Redis проходит стандартное ревью Devvit.
+После одобрения установите её, задайте секреты и проверьте права бота. Проверки
+из Codespaces и из Devvit используют одну Telegram Bot API, но выполняются в
+разных средах. [Инструкция по включению отправки](../REDDIT_SETUP.md).
 
 Документация: [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage),
 [Devvit HTTP Fetch Policy](https://developers.reddit.com/docs/capabilities/server/http-fetch-policy).

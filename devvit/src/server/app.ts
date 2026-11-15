@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { context, reddit, settings } from '@devvit/web/server';
 import { BridgeError, collect } from '../core.ts';
+import { runDelivery } from '../delivery.ts';
 import { makeSource } from '../source.ts';
+import { TelegramClient, TelegramError } from '../telegram.ts';
 import { RedisStore } from './store.ts';
 
 export const app = new Hono();
@@ -19,7 +21,8 @@ async function requireModerator() {
   const permissions = await user?.getModPermissionsForSubreddit(context.subredditName);
   if (!permissions?.includes('all')) throw new BridgeError('FULL_MODERATOR_REQUIRED');
 }
-const errorCode = (error: unknown) => error instanceof BridgeError ? error.message : 'SOURCE_OR_STORAGE_ERROR';
+const errorCode = (error: unknown) => error instanceof BridgeError || error instanceof TelegramError
+  ? error.message : 'SOURCE_OR_STORAGE_ERROR';
 const toast = (text: string) => ({ showToast: { text } });
 app.onError((error, c) => {
   const code = errorCode(error);
@@ -44,7 +47,7 @@ app.post('/internal/menu/status', async c => {
   try {
     await requireModerator();
     const status = await store.counts();
-    return c.json(toast(`Pending IDs: ${status.pending}; tracked: ${status.trackedForRecheck}; baseline: ${!!status.checkpoint}. Sending blocked in this build.`));
+    return c.json(toast(`Pending IDs: ${status.pending}; baseline: ${!!status.checkpoint}; Telegram tracked: ${status.telegramTracked}; unconfirmed: ${status.telegramReserved}.`));
   } catch (error) { return c.json(toast(errorCode(error))); }
 });
 app.post('/internal/scheduler/read', async c => {
@@ -61,5 +64,42 @@ app.post('/internal/scheduler/read', async c => {
     return c.json({ status: 'error', code }, 500);
   }
 });
-// No delivery endpoint, no token settings, no external endpoint, no post triggers.
-// HTTP permission is also absent. Enabling collection cannot enable Telegram.
+
+async function telegramSettings() {
+  const [token, rawChatId] = await Promise.all([
+    settings.get<string>('TELEGRAM_BOT_TOKEN'), settings.get<string>('TELEGRAM_CHAT_ID'),
+  ]);
+  const address = rawChatId?.trim() ?? '';
+  const chatId = Number(address);
+  if (!/^-[1-9][0-9]*$/.test(address) || !Number.isSafeInteger(chatId)) {
+    throw new BridgeError('TELEGRAM_CHAT_ID_REQUIRED');
+  }
+  const client = new TelegramClient(token?.trim() ?? '', fetch, 6000);
+  return { client, destination: { chatId, botId: client.botId } };
+}
+
+app.post('/internal/menu/verify-telegram', async c => {
+  try {
+    await requireModerator();
+    const { client, destination } = await telegramSettings();
+    await client.resolveChat(String(destination.chatId));
+    return c.json(toast('Telegram bot and chat permissions verified.'));
+  } catch (error) { return c.json(toast(`Verification stopped: ${errorCode(error)}.`)); }
+});
+
+app.post('/internal/scheduler/telegram', async c => {
+  if (!await allowedInstallation()) return c.json({ status: 'disabled' });
+  const enabled = await settings.get<boolean>('pollingEnabled') === true &&
+    await settings.get<boolean>('telegramDeliveryEnabled') === true;
+  if (!enabled && !await store.activation()) return c.json({ status: 'disabled' });
+  try {
+    const { client, destination } = await telegramSettings();
+    const report = await runDelivery(store, source, client, destination, enabled, randomUUID());
+    console.log(JSON.stringify({ event: 'telegram_delivery', ...report }));
+    return c.json({ status: report.status });
+  } catch (error) {
+    const code = errorCode(error);
+    console.error(JSON.stringify({ event: 'telegram_delivery_failed', code }));
+    return c.json({ status: 'error', code }, 500);
+  }
+});

@@ -1,4 +1,4 @@
-import { MAX_SCAN, SOURCE, type Post, type Source } from './core.ts';
+import { BridgeError, MAX_SCAN, SOURCE, type Post, type Source } from './core.ts';
 
 export type SdkPost = {
   id: string; subredditName: string; title: string; permalink: string; createdAt: Date;
@@ -23,7 +23,16 @@ export function makeSource(reddit: RedditReader): Source {
     }).all()).map(normalize),
     byId: async id => {
       if (!/^t3_[a-z0-9]+$/.test(id)) throw new Error('INVALID_POST_ID');
-      return normalize(await reddit.getPostById(id as `t3_${string}`));
+      try {
+        return normalize(await reddit.getPostById(id as `t3_${string}`));
+      } catch (error) {
+        // @devvit/reddit 0.15.3 emits this only for a successful Info RPC
+        // without the requested post. Transport and permission errors differ.
+        if (error instanceof Error && error.message === `no post ${id}`) {
+          throw new BridgeError('POST_NOT_FOUND');
+        }
+        throw error;
+      }
     },
   };
 }

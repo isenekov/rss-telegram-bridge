@@ -28,12 +28,12 @@ class MemoryStore implements Store {
     if (checkpoint) this.cursor = structuredClone(checkpoint);
   }
   async due(now: number, limit: number) {
-    return [...this.data.values()].filter(r => r.stage !== 'baseline' && r.nextCheckAt <= now)
+    return [...this.data.values()].filter(r => r.stage === 'pending' && r.nextCheckAt <= now)
       .sort((a, b) => a.nextCheckAt - b.nextCheckAt).slice(0, limit).map(r => r.id);
   }
   async prune(token: string, before: number) {
     if (token !== this.lease.token) throw new BridgeError('LEASE_LOST');
-    const ids = [...this.data.values()].filter(r => r.stage !== 'sent' && r.createdAt <= before).slice(0, 100).map(r => r.id);
+    const ids = [...this.data.values()].filter(r => r.stage !== 'sent' && r.stage !== 'reserved' && r.createdAt <= before).slice(0, 100).map(r => r.id);
     ids.forEach(id => this.data.delete(id)); return ids.length;
   }
 }
@@ -142,11 +142,12 @@ test('network or permission errors mean unknown, with exponential retry', async 
   assert.equal(h.db.data.get('t3_new')?.nextCheckAt, h.db.now + 300_000);
   h.advance(); await h.run(); assert.equal(h.db.data.get('t3_new')?.nextCheckAt, h.db.now + 600_000);
 });
-test('sent metadata survives retention and is included in availability checks', async () => {
+test('collector retention preserves sent records for the delivery task', async () => {
   const h = harness(); await h.run(); h.advance(); h.set([post('new', START + 1000), post()]); await h.run();
-  const record = h.db.data.get('t3_new')!; record.stage = 'sent'; record.messageId = 42;
+  const record = h.db.data.get('t3_new')!;
+  record.stage = 'sent'; record.messageId = 42; record.fingerprint = '0'.repeat(64);
   h.advance(RETENTION_MS + 1000); h.set([post('new', START + 1000, { unavailable: true }), post()]);
-  const r = await h.run(); assert.equal(r.unavailable, 1); assert.equal(r.pruned, 1);
+  const r = await h.run(); assert.equal(r.checked, 0); assert.equal(r.pruned, 1);
   assert.equal(h.db.data.get('t3_new')?.messageId, 42);
 });
 test('SDK reader explicitly names the foreign source and bounds pagination', async () => {
@@ -156,6 +157,10 @@ test('SDK reader explicitly names the foreign source and bounds pagination', asy
   assert.equal((await reader.latest())[0]?.id, 't3_abc');
   assert.deepEqual(options, { subredditName: SOURCE, limit: 500, pageSize: 100 });
   await assert.rejects(reader.byId('invalid id'), /INVALID_POST_ID/);
+  const missing = makeSource({ getNewPosts: () => ({ all: async () => [] }), getPostById: async id => {
+    throw new Error(`no post ${id}`);
+  } });
+  await assert.rejects(missing.byId('t3_abc'), /POST_NOT_FOUND/);
 });
 test('message draft contains only escaped title and original permalink', () => {
   assert.equal(messageFor(post()), `<b>Game &lt;Alpha&gt; &amp; beta</b>\nhttps://www.reddit.com/r/${SOURCE}/comments/abc/title/`);
