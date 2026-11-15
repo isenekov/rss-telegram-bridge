@@ -133,8 +133,8 @@ Codespaces. [Отчёт о проверке](devvit/TEST_REPORT.md).
 
 ```bash
 git fetch origin codex/devvit-telegram-review
-git worktree add --detach ../rss-telegram-review FETCH_HEAD
-cd ../rss-telegram-review/devvit
+git worktree add --detach ../rss-telegram-delivery FETCH_HEAD
+cd ../rss-telegram-delivery/devvit
 npm ci
 npm run verify
 ```
@@ -148,11 +148,12 @@ npm run verify
 отправки, соберёт сервер и запустит `devvit publish` для подачи версии на ревью.
 На ветке проверки чтения команды `publish:telegram` нет.
 
-Заметив строку `Your app is now unlisted`, установите указанный в выводе номер
-версии в `r/gfar34_dev`. Например, для версии `0.0.3`:
+После успешной публикации из этой папки дождитесь строки
+`Your app is now unlisted`. Затем установите последнюю версию в
+`r/gfar34_dev` и проверьте список настроек. Номер версии назначает Devvit.
 
 ```bash
-npx devvit install gfar34_dev gfar34@0.0.3
+npx devvit install gfar34_dev gfar34@latest &&
 npx devvit settings list
 ```
 
