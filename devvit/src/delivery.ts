@@ -1,23 +1,27 @@
 import { createHash } from 'node:crypto';
 import {
-  assertRecord, BridgeError, messageFor, RECHECK_MS, SOURCE, sourceUnavailable, validPost,
+  assertRecord, BridgeError, MAX_SCAN, messageFor, RECHECK_MS, SOURCE, sourceUnavailable, validPost,
   type Post, type RecordState, type Source, type Store,
 } from './core.ts';
 import { deliverOnce, type TelegramClient, type TelegramDestination } from './telegram.ts';
 
 const MAX_SENDS = 2;
 const MAX_REVIEWS = 10;
+const LATEST_POST_COUNT = 5;
 const REQUEST_BUDGET_MS = 18_000;
 const REMOVED_NOTICE = 'Исходная публикация недоступна.';
 const fingerprint = (html: string) => createHash('sha256').update(html).digest('hex');
 
 export type Activation = TelegramDestination & { startedAt: number };
+export type LatestFive = { ids: string[]; requestedAt: number };
 export interface DeliveryStore extends Pick<Store, 'claim' | 'records' | 'commit'> {
   activation(): Promise<Activation | undefined>;
   activate(token: string, value: Activation): Promise<void>;
   pendingAfter(startedAt: number, limit: number): Promise<string[]>;
   postedDue(now: number, limit: number): Promise<string[]>;
   hasPendingRemovals(): Promise<boolean>;
+  requestedLatestFive(): Promise<string[] | undefined>;
+  commitLatestFive(token: string, records: RecordState[], batch: LatestFive): Promise<void>;
 }
 type Transport = Pick<TelegramClient, 'send' | 'edit' | 'resolveChat'>;
 type PostStatus = { kind: 'visible'; post: Post } | { kind: 'unavailable' } | { kind: 'unknown' };
@@ -29,6 +33,51 @@ export function assertActivation(value: unknown): asserts value is Activation {
       !Number.isSafeInteger(activation.botId) || activation.botId <= 0) {
     throw new BridgeError('INVALID_TELEGRAM_ACTIVATION');
   }
+}
+
+export function assertLatestFiveIds(ids: unknown): asserts ids is string[] {
+  if (!Array.isArray(ids) || ids.length !== LATEST_POST_COUNT || new Set(ids).size !== LATEST_POST_COUNT ||
+      ids.some(id => typeof id !== 'string' || !/^t3_[a-z0-9]+$/.test(id))) {
+    throw new BridgeError('INVALID_LATEST_FIVE_IDS');
+  }
+}
+
+type LatestFiveReport = { status: 'busy' } | { status: 'already-requested' } |
+  { status: 'queued'; selected: number; queued: number };
+
+export async function queueLatestFive(
+  store: DeliveryStore, source: Source, token: string, clock: () => number = Date.now,
+): Promise<LatestFiveReport> {
+  const started = clock();
+  if (!await store.claim(token, started)) return { status: 'busy' };
+  if (await store.requestedLatestFive() !== undefined) return { status: 'already-requested' };
+  if (!await store.activation()) throw new BridgeError('TELEGRAM_NOT_ACTIVATED');
+
+  const posts = await source.latest();
+  if (posts.length > MAX_SCAN || posts.some(post => !validPost(post, started))) {
+    throw new BridgeError('INVALID_SOURCE_RESPONSE');
+  }
+  const eligible = posts.filter(post => !sourceUnavailable(post) && !post.stickied);
+  const latest = [...new Map(eligible.map(post => [post.id, post])).values()]
+    .sort((a, b) => b.createdAt - a.createdAt).slice(0, LATEST_POST_COUNT).reverse();
+  if (latest.length < LATEST_POST_COUNT) throw new BridgeError('FEWER_THAN_FIVE_ELIGIBLE_POSTS');
+  const ids = latest.map(post => post.id);
+  const existing = await store.records(ids);
+  const requestedAt = clock();
+  if (requestedAt - started >= REQUEST_BUDGET_MS) throw new BridgeError('RUN_BUDGET_EXCEEDED');
+
+  const records: RecordState[] = [];
+  latest.forEach((post, index) => {
+    const previous = existing[index];
+    if (previous && previous.stage !== 'baseline' && previous.stage !== 'pending') return;
+    records.push({
+      ...previous, id: post.id, createdAt: post.createdAt, discoveredAt: previous?.discoveredAt ?? requestedAt,
+      stage: 'pending', availability: 'available', lastCheckedAt: requestedAt,
+      nextCheckAt: requestedAt + RECHECK_MS, failures: 0, latestFiveRequestedAt: requestedAt,
+    });
+  });
+  await store.commitLatestFive(token, records, { ids, requestedAt });
+  return { status: 'queued', selected: ids.length, queued: records.length };
 }
 
 async function lookup(source: Source, id: string, now: number): Promise<PostStatus> {
@@ -52,6 +101,7 @@ function retryReview(record: RecordState, now: number, retryAfter = 0) {
 export type DeliveryReport = {
   status: 'ok' | 'busy' | 'off' | 'activated' | 'removal-pending';
   sent: number;
+  latestFiveSent: number;
   rechecked: number;
   updated: number;
   redacted: number;
@@ -64,7 +114,9 @@ export async function runDelivery(
   enabled: boolean, token: string, clock: () => number = Date.now,
 ): Promise<DeliveryReport> {
   const started = clock();
-  const report: DeliveryReport = { status: 'ok', sent: 0, rechecked: 0, updated: 0, redacted: 0, unknown: 0 };
+  const report: DeliveryReport = {
+    status: 'ok', sent: 0, latestFiveSent: 0, rechecked: 0, updated: 0, redacted: 0, unknown: 0,
+  };
   if (!await store.claim(token, started)) return { ...report, status: 'busy' };
   const activation = await store.activation();
   if (!activation) {
@@ -123,11 +175,19 @@ export async function runDelivery(
 
   if (!enabled || !timeLeft()) return report;
   if (await store.hasPendingRemovals()) return { ...report, status: 'removal-pending' };
-  const pending = await store.records(await store.pendingAfter(activation.startedAt, MAX_SENDS));
+  const requestedIds = await store.requestedLatestFive() ?? [];
+  const requested = (await store.records(requestedIds)).filter(record =>
+    record?.stage === 'pending' && record.availability === 'available');
+  const ordinaryIds = await store.pendingAfter(activation.startedAt, MAX_SENDS);
+  const ordinary = await store.records(ordinaryIds.filter(id => !requestedIds.includes(id)));
+  const pending = [...requested, ...ordinary].slice(0, MAX_SENDS);
   for (const record of pending) {
     if (!timeLeft()) break;
     assertRecord(record);
-    if (record.stage !== 'pending' || record.createdAt <= activation.startedAt) throw new BridgeError('INVALID_PENDING_INDEX');
+    if (record.stage !== 'pending' ||
+        (record.createdAt <= activation.startedAt && !requestedIds.includes(record.id))) {
+      throw new BridgeError('INVALID_PENDING_INDEX');
+    }
     if ((record.retryDeliveryAt ?? 0) > clock()) break;
     const current = await lookup(source, record.id, clock());
     const now = clock();
@@ -156,7 +216,11 @@ export async function runDelivery(
         await store.commit(token, [sent]);
       },
     }, () => telegram.send(destination, html));
-    if (result.kind === 'sent') { report.sent++; continue; }
+    if (result.kind === 'sent') {
+      report.sent++;
+      if (requestedIds.includes(record.id)) report.latestFiveSent++;
+      continue;
+    }
     if (result.kind === 'rejected') {
       report.needsAttention = { postId: record.id, code: `TELEGRAM_SEND_${result.code}` };
     } else if (result.kind === 'sent_unrecorded') {

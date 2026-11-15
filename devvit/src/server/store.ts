@@ -1,6 +1,6 @@
 import { redis } from '@devvit/web/server';
-import { assertCheckpoint, assertRecord, BridgeError, LEASE_MS, type Checkpoint, type RecordState, type Store } from '../core.ts';
-import { assertActivation, type Activation, type DeliveryStore } from '../delivery.ts';
+import { assertCheckpoint, assertRecord, BridgeError, LEASE_MS, RETENTION_MS, type Checkpoint, type RecordState, type Store } from '../core.ts';
+import { assertActivation, assertLatestFiveIds, type Activation, type DeliveryStore, type LatestFive } from '../delivery.ts';
 
 const PREFIX = 'glr-read-v1:';
 const key = (s: string) => PREFIX + s;
@@ -40,15 +40,21 @@ export class RedisStore implements Store, DeliveryStore {
     await tx.multi();
     return tx;
   }
-  async commit(token: string, records: RecordState[], checkpoint?: Checkpoint): Promise<void> {
+  async commit(token: string, records: RecordState[], checkpoint?: Checkpoint, latestFive?: LatestFive): Promise<void> {
     records.forEach(assertRecord);
     if (checkpoint) assertCheckpoint(checkpoint);
-    if (!records.length && !checkpoint) return;
+    if (!records.length && !checkpoint && !latestFive) return;
     const tx = await this.transaction(token);
     const values: Record<string, string> = {};
     if (checkpoint) values[key('checkpoint')] = JSON.stringify(checkpoint);
     for (const record of records) values[recordKey(record.id)] = JSON.stringify(record);
+    if (latestFive) values[key('latest-five-requested')] = '1';
     await tx.mSet(values);
+    if (latestFive) {
+      await tx.set(key('latest-five-ids'), JSON.stringify(latestFive.ids), {
+        expiration: new Date(latestFive.requestedAt + RETENTION_MS),
+      });
+    }
     if (records.length) {
       const ids = records.map(r => r.id);
       await tx.zRem(key('pending'), ids);
@@ -68,7 +74,9 @@ export class RedisStore implements Store, DeliveryStore {
       const reserved = records.filter(r => r.stage === 'reserved');
       if (reserved.length) await tx.zAdd(key('telegram-reserved'), ...reserved.map(r => ({ member: r.id, score: r.lastCheckedAt })));
       const expire = records.filter(r => r.stage !== 'sent' && r.stage !== 'reserved');
-      if (expire.length) await tx.zAdd(key('expiry'), ...expire.map(r => ({ member: r.id, score: r.createdAt })));
+      if (expire.length) await tx.zAdd(key('expiry'), ...expire.map(r => ({
+        member: r.id, score: Math.max(r.createdAt, r.latestFiveRequestedAt ?? 0),
+      })));
     }
     const result = await tx.exec();
     if (!result.length) throw new BridgeError('TRANSACTION_NOT_COMMITTED');
@@ -102,6 +110,19 @@ export class RedisStore implements Store, DeliveryStore {
   }
   async hasPendingRemovals(): Promise<boolean> {
     return await redis.zCard(key('telegram-removals')) > 0;
+  }
+  async requestedLatestFive(): Promise<string[] | undefined> {
+    const [marker, snapshot] = await redis.mGet([key('latest-five-requested'), key('latest-five-ids')]);
+    if (marker == null && snapshot == null) return undefined;
+    if (marker !== '1') throw new BridgeError('INVALID_LATEST_FIVE_MARKER');
+    if (snapshot == null) return []; // Retain the one-time marker after the ID snapshot expires.
+    const ids = parse(snapshot);
+    assertLatestFiveIds(ids);
+    return ids;
+  }
+  async commitLatestFive(token: string, records: RecordState[], batch: LatestFive): Promise<void> {
+    assertLatestFiveIds(batch.ids);
+    await this.commit(token, records, undefined, batch);
   }
   async prune(token: string, before: number): Promise<number> {
     const ids = (await redis.zRange(key('expiry'), '-inf', before, {

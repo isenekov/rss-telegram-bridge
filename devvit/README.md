@@ -16,7 +16,7 @@ Telegram access before enabling delivery. [Review and setup](../REDDIT_SETUP.md)
   `reddit.getNewPosts({ subredditName: "GamingLeaksAndRumours" })` with a limit
   of 500 results. The first successful read establishes a baseline.
 - On the first enabled delivery run, the app verifies the bot and destination
-  and records a new start time. Only posts created after that time can be sent.
+  and records a new start time for automatic delivery.
   The delivery job runs every five minutes, two minutes after the collector's
   scheduled start, and sends at most two messages per run.
 - The app checks each post again before sending. Each message contains the
@@ -49,6 +49,11 @@ A full moderator in the configured installation can use these subreddit menus.
   reservations.
 - **GLR: verify Telegram connection** checks the configured bot, chat and
   posting permission.
+- **GLR: queue 5 latest posts for Telegram (once)** selects the five most
+  recent eligible public posts and queues them after delivery has started.
+  The next scheduled runs send up to two per run using the same delivery
+  history. Earlier receipts and unconfirmed reservations suppress duplicate
+  sends, and each original is checked again before its message is sent.
 
 The developer enters the bot token and numeric chat ID as Devvit secrets.
 To pause new sends, turn off **Send new posts to Telegram**. Keep the installation
@@ -72,6 +77,9 @@ Ordinary unsent records and redacted records are pruned in bounded batches after
 a 30-day retention target while the collector runs. Sent mappings and unconfirmed
 reservations survive that cleanup. Unconfirmed sends need a manual check in the
 channel. The app keeps their reservations to avoid repeated delivery.
+The one-time selection expires after 30 days and a flag records that it was
+requested. Eligible posts still pending have a 30-day retention target from
+the request.
 
 The collector saves the checkpoint with the queued IDs. The 10-minute overlap
 covers short listing delays. If 500 results fail to reach the prior checkpoint,

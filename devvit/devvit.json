@@ -70,6 +70,12 @@
         "forUserType": "moderator",
         "location": "subreddit",
         "endpoint": "/internal/menu/verify-telegram"
+      },
+      {
+        "label": "GLR: queue 5 latest posts for Telegram (once)",
+        "forUserType": "moderator",
+        "location": "subreddit",
+        "endpoint": "/internal/menu/queue-latest-five"
       }
     ]
   }

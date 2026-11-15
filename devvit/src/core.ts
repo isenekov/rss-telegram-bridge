@@ -28,6 +28,7 @@ export type RecordState = {
   messageId?: number;
   fingerprint?: string;
   retryDeliveryAt?: number;
+  latestFiveRequestedAt?: number;
 };
 export type Checkpoint = {
   version: 1;
@@ -67,7 +68,9 @@ export function assertRecord(value: unknown): asserts value is RecordState {
       r.createdAt <= 0 || r.failures < 0 || !Number.isInteger(r.failures) ||
       (r.stage === 'sent' && (!Number.isSafeInteger(r.messageId) || r.messageId! <= 0 ||
         typeof r.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(r.fingerprint))) ||
-      (r.retryDeliveryAt !== undefined && (!Number.isSafeInteger(r.retryDeliveryAt) || r.retryDeliveryAt <= 0))) {
+      (r.retryDeliveryAt !== undefined && (!Number.isSafeInteger(r.retryDeliveryAt) || r.retryDeliveryAt <= 0)) ||
+      (r.latestFiveRequestedAt !== undefined &&
+        (!Number.isSafeInteger(r.latestFiveRequestedAt) || r.latestFiveRequestedAt <= 0))) {
     throw new BridgeError('INVALID_RECORD');
   }
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertRecord, BridgeError, LEASE_MS, RECHECK_MS, SOURCE, type Post, type RecordState, type Source } from '../src/core.ts';
-import { runDelivery, type Activation, type DeliveryStore } from '../src/delivery.ts';
+import { queueLatestFive, runDelivery, type Activation, type DeliveryStore } from '../src/delivery.ts';
 import type { EditOutcome, SendOutcome, TelegramDestination } from '../src/telegram.ts';
 
 const START = 1_794_500_000_000;
@@ -12,10 +12,11 @@ function harness() {
   let activation: Activation | undefined;
   let leaseExpires = 0;
   let attempt = 0;
+  let requestedIds: string[] | undefined;
   const records = new Map<string, RecordState>();
   const posts = new Map<string, Post>();
   const calls: { kind: 'send' | 'edit'; html: string; messageId?: number }[] = [];
-  const flags = { failSavingReceipt: false, send: { kind: 'sent', messageId: 42 } as SendOutcome,
+  const flags = { failSavingReceipt: false, loseQueueResponse: false, send: { kind: 'sent', messageId: 42 } as SendOutcome,
     edit: { kind: 'edited' } as EditOutcome };
   const store: DeliveryStore = {
     claim: async (_token, start) => {
@@ -37,6 +38,12 @@ function harness() {
     postedDue: async (when, limit) => [...records.values()].filter(r =>
       r.stage === 'sent' && r.nextCheckAt <= when).slice(0, limit).map(r => r.id),
     hasPendingRemovals: async () => [...records.values()].some(r => r.stage === 'sent' && r.availability === 'unavailable'),
+    requestedLatestFive: async () => requestedIds,
+    commitLatestFive: async (token, updates, batch) => {
+      await store.commit(token, updates);
+      requestedIds = [...batch.ids];
+      if (flags.loseQueueResponse) throw new Error('Redis response lost');
+    },
   };
   const source: Source = {
     latest: async () => [...posts.values()],
@@ -68,13 +75,14 @@ function harness() {
   };
   const run = (enabled = true, destination = DESTINATION) =>
     runDelivery(store, source, telegram, destination, enabled, `attempt-${++attempt}`, () => now);
+  const requestLatestFive = () => queueLatestFive(store, source, `attempt-${++attempt}`, () => now);
   const advance = (ms = 300_000) => { now += ms; };
   async function freshPost() {
     assert.equal((await run()).status, 'activated');
     advance();
     return addPost('new', START + 1000);
   }
-  return { run, advance, addPost, freshPost, source, records, posts, calls, flags };
+  return { run, requestLatestFive, advance, addPost, freshPost, source, records, posts, calls, flags };
 }
 
 test('delivery is off initially and starts with a fresh cutoff before sending new posts once', async () => {
@@ -91,6 +99,83 @@ test('delivery is off initially and starts with a fresh cutoff before sending ne
   h.advance();
   assert.equal((await h.run()).sent, 0);
   assert.deepEqual(h.calls, [{ kind: 'send', html: `<b>Game &lt;Beta&gt;</b>\nhttps://www.reddit.com${next.permalink}` }]);
+});
+
+test('a one-time request sends the five latest eligible posts even if they predate activation', async () => {
+  const h = harness();
+  assert.equal((await h.run()).status, 'activated');
+  h.advance();
+  for (const number of [5, 1, 6, 3, 2, 4]) {
+    const post = h.addPost(`old${number}`, START - 10_000 + number);
+    h.records.get(post.id)!.stage = 'baseline';
+  }
+  h.records.delete('t3_old4');
+  h.addPost('sticky', START - 1000).stickied = true;
+  h.addPost('removed', START - 999).unavailable = true;
+  h.addPost('nsfw', START - 998).nsfw = true;
+  assert.deepEqual(await h.requestLatestFive(), { status: 'queued', selected: 5, queued: 5 });
+  assert.deepEqual(await h.requestLatestFive(), { status: 'busy' });
+  h.advance();
+  assert.equal((await h.run(false)).sent, 0);
+  assert.equal(h.calls.length, 0);
+  for (const expected of [2, 2, 1]) {
+    h.advance();
+    const report = await h.run();
+    assert.equal(report.sent, expected);
+    assert.equal(report.latestFiveSent, expected);
+  }
+  assert.deepEqual(h.calls.map(call => call.html.split('/comments/')[1]?.split('/')[0]),
+    ['old2', 'old3', 'old4', 'old5', 'old6']);
+  h.advance();
+  assert.deepEqual(await h.requestLatestFive(), { status: 'already-requested' });
+  h.addPost('fresh', START + 1000);
+  h.advance();
+  const report = await h.run();
+  assert.equal(report.sent, 1);
+  assert.equal(report.latestFiveSent, 0);
+  assert.match(h.calls.at(-1)!.html, /\/comments\/fresh\//);
+});
+
+test('the five-post batch shares both receipts and unconfirmed reservations with automatic delivery', async () => {
+  const h = harness();
+  const sent = await h.freshPost();
+  assert.equal((await h.run()).sent, 1);
+  h.advance();
+  const reserved = h.addPost('unconfirmed', START + 2000);
+  h.flags.send = { kind: 'unknown' };
+  assert.equal((await h.run()).needsAttention?.code, 'TELEGRAM_SEND_UNCONFIRMED');
+  h.advance();
+  for (const number of [1, 2, 3, 4]) h.addPost(`old${number}`, START - 10_000 + number);
+  assert.deepEqual(await h.requestLatestFive(), { status: 'queued', selected: 5, queued: 3 });
+  assert.equal(h.records.get(sent.id)?.stage, 'sent');
+  assert.equal(h.records.get(reserved.id)?.stage, 'reserved');
+  h.flags.send = { kind: 'sent', messageId: 43 };
+  h.advance();
+  assert.equal((await h.run()).sent, 2);
+  h.advance();
+  assert.equal((await h.run()).sent, 1);
+  h.advance();
+  assert.equal((await h.run()).sent, 0);
+  assert.deepEqual(h.calls.map(call => call.html.split('/comments/')[1]?.split('/')[0]),
+    ['new', 'unconfirmed', 'old2', 'old3', 'old4']);
+});
+
+test('an incomplete listing leaves the one-time request available and a lost commit response cannot repeat it', async () => {
+  const h = harness();
+  assert.equal((await h.run()).status, 'activated');
+  h.advance();
+  for (const number of [1, 2, 3, 4]) h.addPost(`old${number}`, START - 10_000 + number);
+  await assert.rejects(h.requestLatestFive(), /FEWER_THAN_FIVE_ELIGIBLE_POSTS/);
+  h.advance();
+  h.addPost('old5', START - 9995);
+  h.flags.loseQueueResponse = true;
+  await assert.rejects(h.requestLatestFive(), /Redis response lost/);
+  h.advance();
+  h.addPost('old6', START - 9994);
+  assert.deepEqual(await h.requestLatestFive(), { status: 'already-requested' });
+  h.advance();
+  assert.equal((await h.run()).sent, 2);
+  assert.equal(h.records.get('t3_old6')?.latestFiveRequestedAt, undefined);
 });
 
 test('uncertain sends and lost receipts leave durable reservations without replay', async () => {
