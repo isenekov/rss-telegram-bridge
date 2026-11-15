@@ -18,7 +18,8 @@ have a 30-day retention target while the collector runs. Unconfirmed reservation
 are retained for investigation and duplicate prevention. Polling has limited
 visibility into removals, so the operator also handles removal requests.
 
-For support or removal of content, provide the public post URL at
-https://github.com/isenekov/rss-telegram-bridge/issues. Use the operator's private
-support contact for sensitive requests. The operator will verify and supply that
-contact before launch.
+The operator is [u/MaleficentWay4341](https://www.reddit.com/user/MaleficentWay4341/).
+For questions about this notice or requests to remove content or data, contact
+the operator through [r/gfar34_dev modmail](https://www.reddit.com/message/compose/?to=r%2Fgfar34_dev).
+Include the public post or Telegram message link needed to identify the item.
+Use the same contact for support.

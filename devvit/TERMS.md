@@ -15,6 +15,6 @@ Delivery and source checks depend on Devvit, Reddit and Telegram availability.
 Posts can arrive late, be skipped when unavailable, or need operator attention
 after an unconfirmed Telegram response.
 
-For details on stored data and removal requests, see [Privacy](PRIVACY.md).
-Support is available through the project at
-https://github.com/isenekov/rss-telegram-bridge/issues.
+For details on stored data, see the [Privacy notice](PRIVACY.md).
+Send support and removal requests to the operator through
+[r/gfar34_dev modmail](https://www.reddit.com/message/compose/?to=r%2Fgfar34_dev).

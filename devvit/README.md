@@ -88,7 +88,6 @@ by the developer. Telegram processes message text and the destination chat ID.
 
 [Terms](TERMS.md) · [Privacy](PRIVACY.md) · [Version review notes](REVIEW_REQUEST.md)
 
-For support and removal requests, provide the public post URL through the
-project's [Issues page](https://github.com/isenekov/rss-telegram-bridge/issues).
-Use the operator's private contact for requests containing personal data.
-The operator supplies and verifies that contact before launch.
+For support and removal requests, contact the operator through
+[r/gfar34_dev modmail](https://www.reddit.com/message/compose/?to=r%2Fgfar34_dev).
+Include a relevant public Reddit post or Telegram message link.

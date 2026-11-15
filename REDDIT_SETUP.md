@@ -139,10 +139,11 @@ npm ci
 npm run verify
 ```
 
-Укажите ссылки на проверенные оператором Terms и Privacy в настройках `gfar34`.
-Опишите назначение GLAR, используемый источник, область доступа и порядок
-обновления сообщений. [Данные для ревью](devvit/REVIEW_REQUEST.md) ·
-[Privacy](devvit/PRIVACY.md) · [Terms](devvit/TERMS.md).
+В [Developer Settings](https://developers.reddit.com/apps/gfar34/developer-settings)
+сохраните публичную ссылку на [Terms](devvit/TERMS.md) в поле **Terms & Conditions**,
+а ссылку на [Privacy](devvit/PRIVACY.md) в поле **Privacy Policy**. Devvit проверяет
+эти поля перед загрузкой. Ссылки открываются в публичном репозитории GitHub.
+[Данные для ревью](devvit/REVIEW_REQUEST.md).
 
 Из этой папки выполните `npm run publish:telegram`. Команда проверит настройки
 отправки, соберёт сервер и запустит `devvit publish` для подачи версии на ревью.

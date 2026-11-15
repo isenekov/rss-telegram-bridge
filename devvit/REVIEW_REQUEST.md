@@ -35,8 +35,9 @@ Telegram responses. [Test report](TEST_REPORT.md).
 ## Before submitting
 
 - Confirm the description of GLAR, its audience and any commercial use.
-- Supply an operator contact for private support and removal requests, and add
-  the finalized Terms and Privacy links to the app details.
+- Add the published [Terms](TERMS.md) and [Privacy notice](PRIVACY.md) links in
+  [Developer Settings](https://developers.reddit.com/apps/gfar34/developer-settings).
+  Both documents list the test subreddit's modmail as the operator contact.
 - Confirm any permissions needed from the source community or content owners.
   Describe the separate installation and the periodic removal checks in the
   submission so the reviewer can assess both.
