@@ -5,7 +5,7 @@ import {
 } from './core.ts';
 import { deliverOnce, type TelegramClient, type TelegramDestination } from './telegram.ts';
 
-const MAX_SENDS = 2;
+const MAX_SENDS = 5;
 const MAX_REVIEWS = 10;
 const LATEST_POST_COUNT = 5;
 const REQUEST_BUDGET_MS = 18_000;

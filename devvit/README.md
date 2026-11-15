@@ -18,7 +18,7 @@ Telegram access before enabling delivery. [Review and setup](../REDDIT_SETUP.md)
 - On the first enabled delivery run, the app verifies the bot and destination
   and records a new start time for automatic delivery.
   The delivery job runs every five minutes, two minutes after the collector's
-  scheduled start, and sends at most two messages per run.
+  scheduled start, and sends at most five messages per run.
 - The app checks each post again before sending. Each message contains the
   escaped title and a Reddit permalink, with link previews disabled.
 - Redis reserves the post ID before the Telegram request and records the
@@ -51,7 +51,7 @@ A full moderator in the configured installation can use these subreddit menus.
   posting permission.
 - **GLR: queue 5 latest posts for Telegram (once)** selects the five most
   recent eligible public posts and queues them after delivery has started.
-  The next scheduled runs send up to two per run using the same delivery
+  The delivery job sends up to five per run using the same delivery
   history. Earlier receipts and unconfirmed reservations suppress duplicate
   sends, and each original is checked again before its message is sent.
 

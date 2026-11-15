@@ -18,7 +18,7 @@ post immediately before delivery. Redis saves post IDs, delivery reservations,
 timestamps and the Telegram message mapping. Telegram link previews are disabled.
 The moderator can request one batch of the latest five eligible posts after
 activating delivery. It uses the same destination, duplicate protection,
-source checks and two-messages-per-run limit as automatic delivery.
+source checks and limit of five messages per run as automatic delivery.
 The app edits its previously sent messages when the source title or link changes
 or a source lookup indicates that the post is unavailable. A message for an
 unavailable post keeps its existing place in the channel and displays a neutral

@@ -101,7 +101,7 @@ test('delivery is off initially and starts with a fresh cutoff before sending ne
   assert.deepEqual(h.calls, [{ kind: 'send', html: `<b>Game &lt;Beta&gt;</b>\nhttps://www.reddit.com${next.permalink}` }]);
 });
 
-test('a one-time request sends the five latest eligible posts even if they predate activation', async () => {
+test('a one-time request sends five eligible posts in one run even if they predate activation', async () => {
   const h = harness();
   assert.equal((await h.run()).status, 'activated');
   h.advance();
@@ -118,12 +118,10 @@ test('a one-time request sends the five latest eligible posts even if they preda
   h.advance();
   assert.equal((await h.run(false)).sent, 0);
   assert.equal(h.calls.length, 0);
-  for (const expected of [2, 2, 1]) {
-    h.advance();
-    const report = await h.run();
-    assert.equal(report.sent, expected);
-    assert.equal(report.latestFiveSent, expected);
-  }
+  h.advance();
+  const delivery = await h.run();
+  assert.equal(delivery.sent, 5);
+  assert.equal(delivery.latestFiveSent, 5);
   assert.deepEqual(h.calls.map(call => call.html.split('/comments/')[1]?.split('/')[0]),
     ['old2', 'old3', 'old4', 'old5', 'old6']);
   h.advance();
@@ -151,9 +149,7 @@ test('the five-post batch shares both receipts and unconfirmed reservations with
   assert.equal(h.records.get(reserved.id)?.stage, 'reserved');
   h.flags.send = { kind: 'sent', messageId: 43 };
   h.advance();
-  assert.equal((await h.run()).sent, 2);
-  h.advance();
-  assert.equal((await h.run()).sent, 1);
+  assert.equal((await h.run()).sent, 3);
   h.advance();
   assert.equal((await h.run()).sent, 0);
   assert.deepEqual(h.calls.map(call => call.html.split('/comments/')[1]?.split('/')[0]),
@@ -174,8 +170,20 @@ test('an incomplete listing leaves the one-time request available and a lost com
   h.addPost('old6', START - 9994);
   assert.deepEqual(await h.requestLatestFive(), { status: 'already-requested' });
   h.advance();
-  assert.equal((await h.run()).sent, 2);
+  assert.equal((await h.run()).sent, 5);
   assert.equal(h.records.get('t3_old6')?.latestFiveRequestedAt, undefined);
+});
+
+test('ordinary delivery leaves the sixth eligible post for the next run', async () => {
+  const h = harness();
+  assert.equal((await h.run()).status, 'activated');
+  h.advance();
+  for (const number of [1, 2, 3, 4, 5, 6]) h.addPost(`new${number}`, START + number);
+  assert.equal((await h.run()).sent, 5);
+  assert.equal(h.records.get('t3_new6')?.stage, 'pending');
+  h.advance();
+  assert.equal((await h.run()).sent, 1);
+  assert.equal(h.records.get('t3_new6')?.stage, 'sent');
 });
 
 test('uncertain sends and lost receipts leave durable reservations without replay', async () => {
