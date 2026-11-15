@@ -15,31 +15,45 @@ async function stateTest(run: (root: string) => Promise<void>) {
   try { await run(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-test('Telegram preflight verifies the bot, channel and posting permission', async () => {
-  const calls: { url: string; payload: unknown }[] = [];
-  const fetcher: Fetcher = async (url, init) => {
-    calls.push({ url, payload: JSON.parse(String(init.body)) });
-    assert.equal(init.redirect, 'error'); assert.ok(init.signal);
-    if (url.endsWith('/getMe')) return response({ ok: true, result: { id: TARGET.botId, is_bot: true, username: TARGET.botUsername } });
-    if (url.endsWith('/getChat')) return response({ ok: true, result: { id: TARGET.chatId, type: 'channel', title: TARGET.title } });
-    return response({ ok: true, result: { status: 'administrator', user: { id: TARGET.botId }, can_post_messages: true } });
-  };
-  assert.deepEqual(await new TelegramClient(TOKEN, fetcher).resolveChannel('@test_channel'), TARGET);
-  assert.deepEqual(calls[2]?.payload, { chat_id: TARGET.chatId, user_id: TARGET.botId });
-  assert.ok(calls.every(call => !call.url.endsWith('/sendMessage')));
+test('Telegram preflight accepts channels, ordinary groups and supergroups', async () => {
+  const destinations = [
+    { type: 'channel', id: TARGET.chatId, address: '@test_channel', member: { status: 'administrator', can_post_messages: true } },
+    { type: 'group', id: -1234, address: '-1234', member: { status: 'member' } },
+    { type: 'supergroup', id: TARGET.chatId, address: String(TARGET.chatId), member: { status: 'administrator' } },
+  ];
+  for (const { type, id, address, member } of destinations) {
+    const calls: string[] = [];
+    const fetcher: Fetcher = async (url, init) => {
+      const method = url.slice(url.lastIndexOf('/') + 1);
+      calls.push(method);
+      assert.equal(init.redirect, 'error');
+      assert.ok(init.signal);
+      if (method === 'getMe') return response({ ok: true, result: { id: TARGET.botId, is_bot: true, username: TARGET.botUsername } });
+      if (method === 'getChat') return response({ ok: true, result: { id, type, title: TARGET.title } });
+      assert.equal(method, 'getChatMember');
+      assert.deepEqual(JSON.parse(String(init.body)), { chat_id: id, user_id: TARGET.botId });
+      return response({ ok: true, result: { ...member, user: { id: TARGET.botId } } });
+    };
+    assert.deepEqual(await new TelegramClient(TOKEN, fetcher).resolveChat(address), { ...TARGET, chatId: id });
+    assert.deepEqual(calls, ['getMe', 'getChat', 'getChatMember']);
+  }
 });
 test('Telegram preflight rejects private chats, mismatched IDs and missing posting rights', async () => {
-  for (const scenario of ['private', 'wrong_id', 'no_rights']) {
+  const cases = [
+    { type: 'private', id: 1234, member: {}, error: /TARGET_MUST_BE_GROUP_OR_CHANNEL/ },
+    { type: 'channel', id: TARGET.chatId - 1, member: {}, error: /CHAT_ID_MISMATCH/ },
+    { type: 'channel', id: TARGET.chatId, member: { status: 'administrator', can_post_messages: false }, error: /BOT_CANNOT_POST/ },
+    { type: 'supergroup', id: TARGET.chatId, member: { status: 'restricted', is_member: true, can_send_messages: false }, error: /BOT_CANNOT_POST/ },
+    { type: 'group', id: TARGET.chatId, member: { status: 'left' }, error: /BOT_CANNOT_POST/ },
+  ];
+  for (const { type, id, member, error } of cases) {
     const api = new TelegramClient(TOKEN, async url => {
       if (url.endsWith('/getMe')) return response({ ok: true, result: { id: TARGET.botId, is_bot: true, username: TARGET.botUsername } });
-      if (url.endsWith('/getChat')) return response({ ok: true, result: {
-        id: scenario === 'wrong_id' ? TARGET.chatId - 1 : TARGET.chatId,
-        type: scenario === 'private' ? 'private' : 'channel', title: TARGET.title,
-      } });
+      if (url.endsWith('/getChat')) return response({ ok: true, result: { id, type, title: TARGET.title } });
       assert.ok(url.endsWith('/getChatMember'));
-      return response({ ok: true, result: { status: 'administrator', user: { id: TARGET.botId }, can_post_messages: false } });
+      return response({ ok: true, result: { ...member, user: { id: TARGET.botId } } });
     });
-    await assert.rejects(api.resolveChannel(String(TARGET.chatId)), /TARGET_MUST_BE_CHANNEL|CHANNEL_ID_MISMATCH|BOT_CANNOT_POST/);
+    await assert.rejects(api.resolveChat(String(TARGET.chatId)), error);
   }
 });
 test('Telegram smoke message uses the resolved channel and disables link previews and sound', async () => {
@@ -82,9 +96,9 @@ test('Telegram validates inputs and sanitizes preflight errors before any send',
   const fetcher: Fetcher = async () => { calls++; throw new Error(TOKEN); };
   assert.throws(() => new TelegramClient('bad/token', fetcher), /INVALID_BOT_TOKEN/);
   const api = new TelegramClient(TOKEN, fetcher);
-  await assert.rejects(api.resolveChannel('https://example.invalid'), /INVALID_CHANNEL/);
+  await assert.rejects(api.resolveChat('https://example.invalid'), /INVALID_CHAT_ADDRESS/);
   assert.equal(calls, 0);
-  await assert.rejects(api.resolveChannel('@test_channel'), error => {
+  await assert.rejects(api.resolveChat('@test_channel'), error => {
     assert.equal((error as Error).message, 'PREFLIGHT_FAILED'); assert.ok(!String(error).includes(TOKEN)); return true;
   });
 });

@@ -26,16 +26,16 @@ async function main() {
   };
   try {
     const token = await hidden('Токен существующего Telegram-бота (ввод скрыт): ');
-    const chat = await hidden('ID канала (-100…) или @имя_канала (ввод скрыт): ');
+    const chat = await hidden('ID группы или канала либо @имя (ввод скрыт): ');
     const client = new TelegramClient(token);
-    const target = await client.resolveChannel(chat);
+    const target = await client.resolveChat(chat);
     if (cancelled) throw new TelegramError('CANCELLED');
-    console.log(`Бот: @${cleanLabel(target.botUsername)}. Канал: ${cleanLabel(target.title)}.`);
+    console.log(`Бот @${cleanLabel(target.botUsername)}. Чат «${cleanLabel(target.title)}».`);
     const journal = new FileJournal(fileURLToPath(new URL('../.telegram-test-state/', import.meta.url)), target);
     const result = await deliverOnce(journal, () => client.send(target, SMOKE_MESSAGE));
     console.log(JSON.stringify({ event: 'telegram_smoke', ...result }));
     if (result.kind === 'sent' || result.kind === 'already_sent') {
-      console.log(result.kind === 'sent' ? 'Тест отправлен. Проверь канал.' : 'Этот тест уже отправлен; повторное сообщение не создано.');
+      console.log(result.kind === 'sent' ? 'Тест отправлен. Проверь чат.' : 'Этот тест уже отправлен.');
     } else if (result.kind === 'rejected') {
       console.log('Telegram явно отклонил запрос. После исправления причины можно запустить тест снова, соблюдая паузу.');
       process.exitCode = 1;
@@ -43,7 +43,7 @@ async function main() {
       console.log('Отправка не запущена: другой процесс или пауза после отказа.');
       process.exitCode = 1;
     } else {
-      console.log('Повторная отправка заблокирована. Проверь канал и сохрани эту строку результата; не удаляй журнал теста.');
+      console.log('Повторная отправка заблокирована. Проверь чат и сохрани результат вместе с журналом теста.');
       process.exitCode = 1;
     }
   } finally { input.close(); }

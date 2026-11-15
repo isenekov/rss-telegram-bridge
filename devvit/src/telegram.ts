@@ -10,7 +10,19 @@ export class TelegramError extends Error {
 }
 const object = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
 const positiveId = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) > 0;
-const channelId = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) < 0;
+const negativeChatId = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) < 0;
+type ChatType = 'channel' | 'group' | 'supergroup';
+
+function canPost(chatType: ChatType, member: Json): boolean {
+  if (member.status === 'creator') return true;
+  if (chatType === 'channel') {
+    return member.status === 'administrator' && member.can_post_messages === true;
+  }
+  if (member.status === 'restricted') {
+    return member.is_member === true && member.can_send_messages === true;
+  }
+  return member.status === 'administrator' || member.status === 'member';
+}
 
 export type ApiReply =
   | { kind: 'ok'; result: unknown }
@@ -53,27 +65,30 @@ export class TelegramClient {
     if (reply.kind !== 'ok' || !object(reply.result)) throw new TelegramError('PREFLIGHT_FAILED');
     return reply.result;
   }
-  async resolveChannel(chat: string): Promise<Target> {
-    if (!/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(chat) && !/^-[1-9][0-9]{4,19}$/.test(chat)) {
-      throw new TelegramError('INVALID_CHANNEL');
+  async resolveChat(chat: string): Promise<Target> {
+    const numericId = /^-[1-9][0-9]*$/.test(chat) && negativeChatId(Number(chat));
+    if (!numericId && !/^@[A-Za-z0-9_]{1,32}$/.test(chat)) {
+      throw new TelegramError('INVALID_CHAT_ADDRESS');
     }
     const bot = await this.#read('getMe', {});
     if (!positiveId(bot.id) || bot.is_bot !== true || typeof bot.username !== 'string') throw new TelegramError('INVALID_BOT_RESPONSE');
-    const channel = await this.#read('getChat', { chat_id: chat });
-    if (!channelId(channel.id) || channel.type !== 'channel' || typeof channel.title !== 'string') {
-      throw new TelegramError('TARGET_MUST_BE_CHANNEL');
+    const { id, type, title } = await this.#read('getChat', { chat_id: chat });
+    if (type !== 'channel' && type !== 'group' && type !== 'supergroup') {
+      throw new TelegramError('TARGET_MUST_BE_GROUP_OR_CHANNEL');
     }
-    if (chat.startsWith('-') && String(channel.id) !== chat) throw new TelegramError('CHANNEL_ID_MISMATCH');
+    if (!negativeChatId(id) || typeof title !== 'string') {
+      throw new TelegramError('INVALID_CHAT_RESPONSE');
+    }
+    if (numericId && String(id) !== chat) throw new TelegramError('CHAT_ID_MISMATCH');
     // Canonical numeric ID prevents a username change from redirecting the send.
-    const member = await this.#read('getChatMember', { chat_id: channel.id, user_id: bot.id });
-    if (!object(member.user) || member.user.id !== bot.id ||
-        !(member.status === 'creator' || member.status === 'administrator' && member.can_post_messages === true)) {
+    const member = await this.#read('getChatMember', { chat_id: id, user_id: bot.id });
+    if (!object(member.user) || member.user.id !== bot.id || !canPost(type, member)) {
       throw new TelegramError('BOT_CANNOT_POST');
     }
-    return { botId: bot.id, botUsername: bot.username, chatId: channel.id, title: channel.title };
+    return { botId: bot.id, botUsername: bot.username, chatId: id, title };
   }
   async send(target: Target, html: string): Promise<SendOutcome> {
-    if (!channelId(target.chatId) || !positiveId(target.botId) || !html || html.length > 4096) {
+    if (!negativeChatId(target.chatId) || !positiveId(target.botId) || !html || html.length > 4096) {
       throw new TelegramError('INVALID_MESSAGE');
     }
     const reply = await this.#call('sendMessage', {
