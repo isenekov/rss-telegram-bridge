@@ -85,7 +85,7 @@ See [the playtest lifecycle](https://developers.reddit.com/docs/guides/tools/pla
 The evidence was supplied by the operator, not independently collected from their
 authenticated Reddit session.
 
-## Manual Telegram diagnostic — prepared, live send pending
+## Manual Telegram test
 
 On 2026-11-13 the operator asked to proceed with Telegram without waiting for a
 new source post. A separate `npm run telegram:test` command was implemented. It
@@ -101,12 +101,16 @@ and invalid or unwritable state. The terminal preview and hidden-input behavior
 were checked with a deliberately invalid dummy token; it was not echoed and was
 rejected before any network request. No operator credential was used.
 
-The built Devvit server contains no smoke-test text, diagnostic event or Telegram
-Bot API URL. Its HTTP permission remains disabled and polling defaults to off.
-RSS files/workflows and `posted.json` remain unchanged. Real Telegram delivery is
-not yet verified; the owner must run the interactive command in their Codespace.
-This test will not by itself verify the later Devvit-to-Telegram HTTP path or
-the Reddit export permission. See [TELEGRAM_TEST.md](TELEGRAM_TEST.md).
+On 2026-11-15 (Moscow), the owner reported `Тест отправлен. Проверь чат.` from
+`npm run telegram:test` and supplied a screenshot of the message in GLAR. It
+shows the expected test heading and GitHub repository link. This confirms one
+live synthetic delivery from Codespaces. The available evidence is the success
+message and screenshot. Receipt persistence and duplicate suppression are
+covered by the local tests above.
+
+The earlier `TARGET_MUST_BE_GROUP_OR_CHANNEL` result came from destination
+validation before `sendMessage`. The next integration test will exercise the
+HTTP path from the installed Devvit app. See [TELEGRAM_TEST.md](TELEGRAM_TEST.md).
 
 ## Remaining live checks
 
@@ -117,8 +121,7 @@ the Reddit export permission. See [TELEGRAM_TEST.md](TELEGRAM_TEST.md).
 | Recovery after server/storage failures on Reddit | Not fault-injected live; covered only by local contract tests |
 | Five-minute scheduler execution on Reddit | Observe after enabling read-only polling |
 | Guaranteed deletion detection | Not claimed; periodic checks are best effort |
-| Reddit approval of this use and external transfer | Not requested or obtained |
-| Telegram-only synthetic delivery | Implemented outside Devvit; owner enters credentials in Codespaces and verifies receipt |
+| Reddit approval of this use and external transfer | Preliminary question ready for r/Devvit Modmail. See [REVIEW_REQUEST.md](REVIEW_REQUEST.md) |
 | Reddit → Telegram delivery and recovery | Not connected/enabled in the deployed review build |
 
 GitHub Actions runs the same offline checks with read-only repository permissions

@@ -1,86 +1,77 @@
-# Proposed Reddit review request — not submitted
+# Devvit policy inquiry
 
-## Request
+Send the subject and message below from `u/MaleficentWay4341` to
+[r/Devvit Modmail](https://www.reddit.com/message/compose/?to=r%2FDevvit).
+This is a preliminary question for the Devvit team. Their answer will determine
+whether to prepare an app version for review or request a different form of
+access. See [Devvit Rules](https://developers.reddit.com/docs/devvit_rules) and
+[Launch your app](https://developers.reddit.com/docs/guides/launch/launch-guide).
 
-Registered Devvit app: `gfar34`. Reddit developer account: `u/MaleficentWay4341`.
-The operator has confirmed CLI authentication and the app listing; these do
-not establish approval for the proposed integration.
+## Subject
 
-Please confirm whether this proposed integration is permitted on Devvit and
-what additional approvals or permissions are required before any export.
+Devvit policy question: public post titles and links in Telegram (`gfar34`)
 
-The read-only app is installed in the developer's private test subreddit
-`r/gfar34_dev`, not in r/GamingLeaksAndRumours. The developer is not a moderator of
-r/GamingLeaksAndRumours and has not obtained permission to install an app there.
-It would read that community's public new-post listing every five minutes using
-`reddit.getNewPosts({ subredditName: "GamingLeaksAndRumours" })`. It would not
-moderate, post, comment, vote or act on behalf of source-community members.
+## Message
 
-After approval, the proposed integration would notify one existing Telegram
-channel through its existing bot. Each notification would contain only the
-public title and a link to the original Reddit post, without author names,
-post bodies, comments, images or videos. It would not train models, profile
-users, sell datasets or use private Reddit content.
+Hello Devvit team,
 
-The deployed Devvit server prepared for review performs only read-only collection and stores
-minimal operational metadata in installation-scoped Redis. It has no enabled
-HTTP permission, no Telegram credentials, no delivery route and no export.
-Local unit tests use synthetic posts. On 2026-11-13 (Moscow), the operator supplied
-a successful manual-read log from the playtest installation: 500 public source
-posts fetched, an initial baseline established, zero posts queued and zero
-Telegram messages sent. Two subsequent manual reads loaded the saved checkpoint,
-recognized 400 and then 300 existing IDs, and added zero posts. Each run pruned
-100 old metadata records. New-post queuing/deduplication, confirmed persistence
-across playtest sessions/versions and scheduled polling remain to be verified.
-All three logs and their limits are recorded in
-[TEST_REPORT.md](TEST_REPORT.md); technical access is not presented as policy approval.
+I'm developing `gfar34` (Reddit account `u/MaleficentWay4341`) and would like to
+confirm whether Devvit supports sending headlines and links for new public posts
+in r/GamingLeaksAndRumours to my Telegram channel, GLAR.
 
-The repository also contains a separate manual Codespaces Telegram diagnostic.
-It sends only a fixed synthetic test heading and the GitHub repository URL,
-without calling Reddit or reading its stored data. Its credentials are entered
-interactively by the operator, and its local receipt journal is separate from
-Devvit Redis. This command is not included in the Devvit server bundle, does not
-enable Devvit HTTP access, and is not evidence of an approved Reddit export.
+My private test installation is in r/gfar34_dev. I don't moderate
+r/GamingLeaksAndRumours. The app uses the user-scoped Reddit capability and
+`reddit.getNewPosts({ subredditName: "GamingLeaksAndRumours" })`. Manual reads
+successfully loaded the public listing and recognized previously saved IDs.
+The proposed polling interval is five minutes. Redis holds post IDs and
+operational timestamps and state, with a 30-day retention target for unsent
+metadata.
 
-## Questions needing a written answer
+Each proposed message would contain the post title and its original Reddit
+permalink. I tested receipt of a synthetic message from Codespaces in GLAR on
+November 15. The private Devvit build currently reads only and has HTTP Fetch
+disabled. The proposed build would call `api.telegram.org` through the existing
+Telegram bot. Source code and test evidence are available here.
 
-1. Is cross-community public reading from this test installation permitted for
-   this specific purpose? Is a special permission or source-moderator consent
-   required, even if `getNewPosts` technically succeeds?
-2. Is forwarding titles and permalinks to this external Telegram channel an
-   allowed Devvit use case, or must it use a separately approved Data API route?
-3. What source-author permissions, notices, opt-outs, attribution and content
-   licenses are required for this use? A public post is not assumed to grant
-   unrestricted redistribution permission.
-4. Would periodic best-effort post checks be acceptable without source-community
-   deletion triggers? If not, what deletion mechanism is required?
-5. Telegram limits automated deletion to messages under 48 hours old. Would
-   replacing older bot messages with a neutral removal notice meet the required
-   removal behavior? This is proposed, not yet implemented or validated.
-6. Which review path and app visibility should be used, and must the external
-   transfer be included in a new app version submitted for review?
+- Draft implementation: https://github.com/isenekov/rss-telegram-bridge/pull/1
+- Test report: https://github.com/isenekov/rss-telegram-bridge/blob/codex/devvit-readonly-20261112/devvit/TEST_REPORT.md
 
-## Information the operator must complete before submission
+1. Can Devvit approve cross-community reading and Telegram notifications for
+   this use? Which app review and permissions are required, including any
+   permissions from the source community or authors? If this is outside Devvit's
+   supported use cases, which access request should I pursue?
+2. What deletion procedure is required? From a separate installation I can
+   check known posts periodically, but these checks may miss deletions. Telegram
+   generally limits bot deletion to messages under 48 hours old. Would removing
+   the title and link by editing an older message be acceptable, and what
+   would you require for deleted posts that the API does not flag?
+
+Thank you.
+
+## Details for a formal review
 
 - Whether the destination channel is public or private, its intended audience,
   and whether it carries advertising, sponsorship or other commercial activity.
 - Public support/removal contact and finalized Terms/Privacy URLs.
 - Any permission already obtained from Reddit, source moderators or authors.
 
-Do not include tokens, passwords, GitHub Secrets or OAuth codes in the request.
-Do not claim source-community moderation rights or call this a moderation tool.
+Use the [Reddit Help access request](https://support.reddithelp.com/hc/en-us/requests/new?tf_42139884615700=api_request_type_developer_clone&ticket_form_id=14868593862164)
+if Devvit directs this use case to a separate API request. The Devvit launch
+guide describes version review through `npx devvit publish`. For an HTTP Fetch
+build, supply Terms and Privacy URLs and document the requested domain in the
+app README.
 
-## Evidence and unresolved points (checked 2026-11-12, Moscow)
+## Policy references checked on 2026-11-15 (Moscow)
 
 - [Devvit FAQ](https://developers.reddit.com/docs/guides/faq) distinguishes
   Reddit-hosted apps from external integrations and explains that unsupported
   use cases require an access request. Devvit login is not Data API approval.
 - [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy)
-  requires transparent, permitted access; commercial use requires written
-  approval. This app does not request moderator-scoped access.
+  requires transparent, permitted access. Commercial use requires written
+  approval.
 - [Devvit Rules](https://developers.reddit.com/docs/devvit_rules) describe app
   review, external-service disclosures, content permissions and deletion duties.
-  Best-effort monitoring must not be presented as guaranteed compliance.
+  Their deletion requirements extend to content sent to external services.
 - [HTTP Fetch Policy](https://developers.reddit.com/docs/capabilities/server/http-fetch-policy)
   lists `api.telegram.org` globally, but the app still needs an appropriate
   declared capability and an allowed use case. Current HTTP permission is off.
@@ -90,5 +81,3 @@ Do not claim source-community moderation rights or call this a moderation tool.
   the deletion time limit; [editing](https://core.telegram.org/bots/api#editmessagetext)
   is a potential removal fallback requiring live validation and Reddit's acceptance.
 
-No public documentation found grants approval to this particular use case.
-No review request has been sent, and no approval is claimed.
