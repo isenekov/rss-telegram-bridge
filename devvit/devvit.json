@@ -1,11 +1,22 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
   "name": "gfar34",
-  "server": { "dir": "dist/server", "entry": "index.cjs" },
+  "server": {
+    "dir": "dist/server",
+    "entry": "index.cjs"
+  },
   "permissions": {
-    "reddit": { "enable": true, "scope": "user" },
+    "reddit": {
+      "enable": true,
+      "scope": "user"
+    },
     "redis": true,
-    "http": { "enable": true, "domains": ["api.telegram.org"] }
+    "http": {
+      "enable": true,
+      "domains": [
+        "api.telegram.org"
+      ]
+    }
   },
   "scheduler": {
     "tasks": {
@@ -70,6 +81,12 @@
         "forUserType": "moderator",
         "location": "subreddit",
         "endpoint": "/internal/menu/verify-telegram"
+      },
+      {
+        "label": "GLR: send 5 latest to Telegram (once)",
+        "forUserType": "moderator",
+        "location": "subreddit",
+        "endpoint": "/internal/menu/send-five-latest"
       }
     ]
   }
