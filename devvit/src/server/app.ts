@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { context, reddit, settings } from '@devvit/web/server';
 import { BridgeError, collect } from '../core.ts';
 import { runDelivery } from '../delivery.ts';
+import { sendFiveLatest } from '../manual.ts';
 import { makeSource } from '../source.ts';
 import { TelegramClient, TelegramError } from '../telegram.ts';
 import { RedisStore } from './store.ts';
@@ -87,6 +88,25 @@ app.post('/internal/menu/verify-telegram', async c => {
   } catch (error) { return c.json(toast(`Verification stopped: ${errorCode(error)}.`)); }
 });
 
+// Explicit moderator action: five most recent eligible posts, including pre-activation.
+app.post('/internal/menu/send-five-latest', async c => {
+  try {
+    await requireModerator();
+    if (await settings.get<boolean>('telegramDeliveryEnabled') !== true ||
+        await settings.get<boolean>('pollingEnabled') !== true) {
+      throw new BridgeError('AUTOMATIC_DELIVERY_NOT_ENABLED');
+    }
+    const { client, destination } = await telegramSettings();
+    const report = await sendFiveLatest(store, source, client, destination, randomUUID());
+    console.log(JSON.stringify({ event: 'manual_five_delivery', ...report }));
+    const attention = report.needsAttention ? ` Review: ${report.needsAttention.code}.` : '';
+    return c.json(toast(`Latest 5: sent ${report.sent}, skipped ${report.skipped}.${attention}`));
+  } catch (error) {
+    const code = errorCode(error);
+    console.error(JSON.stringify({ event: 'manual_five_failed', code }));
+    return c.json(toast(`Manual send stopped: ${code}.`));
+  }
+});
 app.post('/internal/scheduler/telegram', async c => {
   if (!await allowedInstallation()) return c.json({ status: 'disabled' });
   const enabled = await settings.get<boolean>('pollingEnabled') === true &&
