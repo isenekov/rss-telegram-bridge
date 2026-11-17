@@ -18,7 +18,6 @@ export interface DeliveryStore extends Pick<Store, 'claim' | 'records' | 'commit
   activate(token: string, value: Activation): Promise<void>;
   pendingAfter(startedAt: number, limit: number): Promise<string[]>;
   postedDue(now: number, limit: number): Promise<string[]>;
-  hasPendingRemovals(): Promise<boolean>;
   requestedLatestFive(): Promise<string[] | undefined>;
   commitLatestFive(token: string, records: RecordState[], batch: LatestFive): Promise<void>;
 }
@@ -98,7 +97,7 @@ function retryReview(record: RecordState, now: number, retryAfter = 0) {
 }
 
 export type DeliveryReport = {
-  status: 'ok' | 'busy' | 'off' | 'activated' | 'removal-pending';
+  status: 'ok' | 'busy' | 'off' | 'activated';
   sent: number;
   latestFiveSent: number;
   rechecked: number;
@@ -135,8 +134,7 @@ export async function runDelivery(
     if (!timeLeft()) break;
     assertRecord(record);
     if (record.stage !== 'sent') throw new BridgeError('INVALID_POSTED_INDEX');
-    const current = record.availability === 'unavailable'
-      ? { kind: 'unavailable' as const } : await lookup(source, record.id, clock());
+    const current = await lookup(source, record.id, clock());
     const now = clock();
     report.rechecked++;
     if (current.kind === 'unknown') {
@@ -144,8 +142,6 @@ export async function runDelivery(
       await store.commit(token, [retryReview({ ...record, availability: 'unknown', lastCheckedAt: now }, now)]);
       continue;
     }
-    // Preserve the original Telegram message when its Reddit source disappears.
-    // Do not redact the message or remove its title and link.
     if (current.kind === 'unavailable') {
       await store.commit(token, [{ ...record, availability: 'unavailable',
         lastCheckedAt: now, nextCheckAt: now + RECHECK_MS, failures: 0 }]);
@@ -172,7 +168,6 @@ export async function runDelivery(
   }
 
   if (!enabled || !timeLeft()) return report;
-  if (await store.hasPendingRemovals()) return { ...report, status: 'removal-pending' };
   const requestedIds = await store.requestedLatestFive() ?? [];
   const requested = (await store.records(requestedIds)).filter(record =>
     record?.stage === 'pending' && record.availability === 'available');

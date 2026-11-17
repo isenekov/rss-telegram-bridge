@@ -12,8 +12,9 @@ them, reference IDs. Telegram receives the message text, original public link
 and configured chat ID. The operator's bot token is a Devvit secret.
 
 The app keeps sent mappings so it can locate and update messages. When the source
-post is unavailable, it replaces its title and link with a neutral notice and
-drops the hash of the original message. Ordinary unsent and redacted records
+post is unavailable, the app records that status, retains the message mapping and
+hash, and preserves the delivered Telegram message's title and link. Ordinary
+unsent records and records redacted by older versions
 have a 30-day retention target while the collector runs. Unconfirmed reservations
 are retained for investigation and duplicate prevention. Polling has limited
 visibility into removals, so the operator also handles removal requests.

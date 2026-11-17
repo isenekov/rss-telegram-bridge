@@ -130,14 +130,17 @@ must not be inferred from a green CI result.
 
 ## Telegram version for review
 
-The candidate passes 43 offline tests, the Devvit config schema, TypeScript
+The candidate passes 48 offline tests, the Devvit config schema, TypeScript
 and the server bundle build. The delivery cases cover the default off state,
 fresh activation cutoff, no replay after success, a lost send reply or a lost
 receipt write, Telegram rate-limit timing, checking the original before a send,
-editing the same message for confirmed unavailability or a changed title,
-and resuming after a temporary Reddit error. A failed removal edit keeps its
-mapping and holds new sends. The destination stays bound to its original bot
-and chat.
+preserving the message and receipt after confirmed source unavailability,
+editing an available source's changed title, and resuming after a temporary
+Reddit error. Records saved as unavailable by older versions allow new sends
+to continue. Previously redacted messages keep their existing text. The cases
+also cover sending five posts per run and sharing duplicate protection between
+the one-time selection and automatic delivery. The destination stays bound to
+its original bot and chat.
 
 These tests inject synthetic source responses, storage and Telegram replies.
 Live Devvit HTTP and Redis delivery, the scheduled load, and the completeness

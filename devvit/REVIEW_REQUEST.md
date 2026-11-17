@@ -19,15 +19,17 @@ timestamps and the Telegram message mapping. Telegram link previews are disabled
 The moderator can request one batch of the latest five eligible posts after
 activating delivery. It uses the same destination, duplicate protection,
 source checks and limit of five messages per run as automatic delivery.
-The app edits its previously sent messages when the source title or link changes
-or a source lookup indicates that the post is unavailable. A message for an
-unavailable post keeps its existing place in the channel and displays a neutral
-notice instead of the source title and URL.
+The app edits its previously sent messages when an available source's title or
+link changes. When a source lookup indicates that the post is unavailable, the
+app records its availability and preserves the Telegram message's title and
+link. This behavior applies to new checks after the update. The app keeps
+messages overwritten by older versions as they are.
 
 The app checks known posts periodically from its own installation. It relies on
 the source lookup and removal flags returned through Devvit. This mechanism can
-miss removals, and the operator handles requests and failed edits separately.
-A failed redaction pauses new sends. The app uses `api.telegram.org` for bot
+miss removals, and the operator handles content removal requests manually using
+the retained message mapping. Source unavailability allows new sends to continue.
+The app uses `api.telegram.org` for bot
 access, sending and editing. Both collection and delivery are off by default.
 
 The owner verified live public listing access and duplicate detection on Reddit,
