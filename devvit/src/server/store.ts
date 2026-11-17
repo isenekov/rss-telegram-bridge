@@ -69,8 +69,6 @@ export class RedisStore implements Store, DeliveryStore {
       if (recheck.length) await tx.zAdd(key('recheck'), ...recheck.map(r => ({ member: r.id, score: r.nextCheckAt })));
       const posted = records.filter(r => r.stage === 'sent');
       if (posted.length) await tx.zAdd(key('telegram-posted'), ...posted.map(r => ({ member: r.id, score: r.nextCheckAt })));
-      const removals = posted.filter(r => r.availability === 'unavailable');
-      if (removals.length) await tx.zAdd(key('telegram-removals'), ...removals.map(r => ({ member: r.id, score: r.nextCheckAt })));
       const reserved = records.filter(r => r.stage === 'reserved');
       if (reserved.length) await tx.zAdd(key('telegram-reserved'), ...reserved.map(r => ({ member: r.id, score: r.lastCheckedAt })));
       const expire = records.filter(r => r.stage !== 'sent' && r.stage !== 'reserved');
@@ -107,9 +105,6 @@ export class RedisStore implements Store, DeliveryStore {
     return (await redis.zRange(key('telegram-posted'), '-inf', now, {
       by: 'score', limit: { offset: 0, count: limit },
     })).map(r => r.member);
-  }
-  async hasPendingRemovals(): Promise<boolean> {
-    return await redis.zCard(key('telegram-removals')) > 0;
   }
   async requestedLatestFive(): Promise<string[] | undefined> {
     const [marker, snapshot] = await redis.mGet([key('latest-five-requested'), key('latest-five-ids')]);

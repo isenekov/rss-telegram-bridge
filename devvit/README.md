@@ -24,16 +24,17 @@ Telegram access before enabling delivery. [Review and setup](../REDDIT_SETUP.md)
 - Redis reserves the post ID before the Telegram request and records the
   Telegram message ID on success. A definite rejection permits a later retry.
   An unconfirmed send keeps its reservation for operator investigation.
-- The app checks previously sent posts periodically. For changes, it edits the
-  original Telegram message. A confirmed unavailable original results in the
-  text “Исходная публикация недоступна.” The message stays in the channel. Failed
-  removal edits pause new sends and retry. A network or permission failure
+- The app checks previously sent posts periodically. A changed title or link
+  on an available source updates the existing Telegram message. When the
+  source becomes unavailable, the app records that status and preserves the
+  delivered title and link. New sends continue. A network or permission failure
   during a Reddit lookup schedules another check.
 - The target interval for each sent post is one hour. Each invocation checks
   up to ten posts and stops starting requests when its time budget expires.
   Actual intervals depend on the backlog and service availability. Missing
   source signals can prevent detection. The operator handles removal requests
   using the message mapping and the support contact below.
+- Messages overwritten by an older app version keep their existing text.
 
 ## Setup and operation
 
@@ -89,7 +90,7 @@ it reports `SCAN_WINDOW_GAP` without advancing the checkpoint.
 
 `api.telegram.org` is used for `getMe`, `getChat` and `getChatMember` to confirm
 access, `sendMessage` to deliver a title and link, and `editMessageText` to update
-the same message or remove its Reddit content. The bot credentials are entered
+the title or link while the original is available. The bot credentials are entered
 by the developer. Telegram processes message text and the destination chat ID.
 
 ## Terms, privacy and support

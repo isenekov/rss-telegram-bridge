@@ -9,7 +9,6 @@ const MAX_SENDS = 5;
 const MAX_REVIEWS = 10;
 const LATEST_POST_COUNT = 5;
 const REQUEST_BUDGET_MS = 18_000;
-const REMOVED_NOTICE = 'Исходная публикация недоступна.';
 const fingerprint = (html: string) => createHash('sha256').update(html).digest('hex');
 
 export type Activation = TelegramDestination & { startedAt: number };
@@ -19,7 +18,6 @@ export interface DeliveryStore extends Pick<Store, 'claim' | 'records' | 'commit
   activate(token: string, value: Activation): Promise<void>;
   pendingAfter(startedAt: number, limit: number): Promise<string[]>;
   postedDue(now: number, limit: number): Promise<string[]>;
-  hasPendingRemovals(): Promise<boolean>;
   requestedLatestFive(): Promise<string[] | undefined>;
   commitLatestFive(token: string, records: RecordState[], batch: LatestFive): Promise<void>;
 }
@@ -99,7 +97,7 @@ function retryReview(record: RecordState, now: number, retryAfter = 0) {
 }
 
 export type DeliveryReport = {
-  status: 'ok' | 'busy' | 'off' | 'activated' | 'removal-pending';
+  status: 'ok' | 'busy' | 'off' | 'activated';
   sent: number;
   latestFiveSent: number;
   rechecked: number;
@@ -136,8 +134,7 @@ export async function runDelivery(
     if (!timeLeft()) break;
     assertRecord(record);
     if (record.stage !== 'sent') throw new BridgeError('INVALID_POSTED_INDEX');
-    const current = record.availability === 'unavailable'
-      ? { kind: 'unavailable' as const } : await lookup(source, record.id, clock());
+    const current = await lookup(source, record.id, clock());
     const now = clock();
     report.rechecked++;
     if (current.kind === 'unknown') {
@@ -145,13 +142,16 @@ export async function runDelivery(
       await store.commit(token, [retryReview({ ...record, availability: 'unknown', lastCheckedAt: now }, now)]);
       continue;
     }
-    const unavailable = current.kind === 'unavailable';
-    const html = unavailable ? REMOVED_NOTICE : messageFor(current.post, now);
+    if (current.kind === 'unavailable') {
+      await store.commit(token, [{ ...record, availability: 'unavailable',
+        lastCheckedAt: now, nextCheckAt: now + RECHECK_MS, failures: 0 }]);
+      continue;
+    }
+    const html = messageFor(current.post, now);
     const hash = fingerprint(html);
-    const changed = unavailable || hash !== record.fingerprint;
-    const updated: RecordState = { ...record, availability: unavailable ? 'unavailable' : 'available',
+    const updated: RecordState = { ...record, availability: 'available',
       lastCheckedAt: now, nextCheckAt: now + RECHECK_MS, failures: 0 };
-    if (changed) {
+    if (hash !== record.fingerprint) {
       if (!timeLeft()) break;
       const outcome = await telegram.edit(destination, record.messageId!, html);
       if (outcome.kind !== 'edited') {
@@ -161,20 +161,13 @@ export async function runDelivery(
         report.needsAttention = { postId: record.id, code, messageId: record.messageId };
         return report;
       }
-      if (unavailable) {
-        updated.stage = 'redacted';
-        delete updated.fingerprint;
-        report.redacted++;
-      } else {
-        updated.fingerprint = hash;
-        report.updated++;
-      }
+      updated.fingerprint = hash;
+      report.updated++;
     }
     await store.commit(token, [updated]);
   }
 
   if (!enabled || !timeLeft()) return report;
-  if (await store.hasPendingRemovals()) return { ...report, status: 'removal-pending' };
   const requestedIds = await store.requestedLatestFive() ?? [];
   const requested = (await store.records(requestedIds)).filter(record =>
     record?.stage === 'pending' && record.availability === 'available');

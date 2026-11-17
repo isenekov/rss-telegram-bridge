@@ -37,7 +37,6 @@ function harness() {
       .sort((a, b) => a.createdAt - b.createdAt).slice(0, limit).map(r => r.id),
     postedDue: async (when, limit) => [...records.values()].filter(r =>
       r.stage === 'sent' && r.nextCheckAt <= when).slice(0, limit).map(r => r.id),
-    hasPendingRemovals: async () => [...records.values()].some(r => r.stage === 'sent' && r.availability === 'unavailable'),
     requestedLatestFive: async () => requestedIds,
     commitLatestFive: async (token, updates, batch) => {
       await store.commit(token, updates);
@@ -224,18 +223,26 @@ test('an inaccessible post is skipped before sending when its collected ID is st
   assert.deepEqual(h.calls, []);
 });
 
-test('a missing original changes the existing Telegram text even while new sends are paused', async () => {
+test('a missing original preserves the Telegram message and its receipt while new sends are paused', async () => {
   const h = harness();
   const post = await h.freshPost();
   await h.run();
+  const originalMessage = structuredClone(h.calls);
+  const originalReceipt = structuredClone(h.records.get(post.id)!);
   h.advance(RECHECK_MS);
   h.posts.delete(post.id);
   const review = await h.run(false);
-  assert.equal(review.redacted, 1);
-  assert.deepEqual(h.calls.at(-1), { kind: 'edit', messageId: 42, html: 'Исходная публикация недоступна.' });
+  assert.equal(review.redacted, 0);
+  assert.equal(review.updated, 0);
+  assert.deepEqual(h.calls, originalMessage);
   const record = h.records.get(post.id);
-  assert.equal(record?.stage, 'redacted');
-  assert.equal(record?.fingerprint, undefined);
+  assert.equal(record?.stage, 'sent');
+  assert.equal(record?.availability, 'unavailable');
+  assert.equal(record?.messageId, originalReceipt.messageId);
+  assert.equal(record?.fingerprint, originalReceipt.fingerprint);
+  h.advance(RECHECK_MS);
+  await h.run(false);
+  assert.deepEqual(h.calls, originalMessage);
 });
 
 test('a source outage schedules a recheck and a changed title edits the same receipt when it returns', async () => {
@@ -255,19 +262,51 @@ test('a source outage schedules a recheck and a changed title edits the same rec
     html: `<b>New title &amp; fix</b>\nhttps://www.reddit.com${post.permalink}` });
 });
 
-test('a failed redaction pauses new sends and preserves the mapping to its original destination', async () => {
+test('removed posts and older unavailable receipts allow new sends with duplicate protection', async () => {
+  for (const alreadyUnavailable of [false, true]) {
+    const h = harness();
+    const post = await h.freshPost();
+    await h.run();
+    const previous = h.records.get(post.id)!;
+    if (alreadyUnavailable) previous.availability = 'unavailable';
+    post.unavailable = true;
+    h.flags.edit = { kind: 'rejected', code: 403 };
+    h.addPost('later', START + 2000);
+    h.advance(RECHECK_MS);
+    const report = await h.run();
+    assert.equal(report.status, 'ok');
+    assert.equal(report.sent, 1);
+    assert.equal(report.redacted, 0);
+    assert.equal(report.needsAttention, undefined);
+    assert.equal(h.records.get(post.id)?.stage, 'sent');
+    assert.equal(h.records.get(post.id)?.fingerprint, previous.fingerprint);
+    assert.equal(h.calls.length, 2);
+    assert.ok(h.calls.every(call => call.kind === 'send'));
+    h.advance(RECHECK_MS);
+    assert.equal((await h.run()).sent, 0);
+    assert.equal(h.calls.length, 2);
+    h.advance();
+    await assert.rejects(h.run(true, { ...DESTINATION, chatId: -4 }), /TELEGRAM_DESTINATION_CHANGED/);
+  }
+});
+
+test('unavailable receipts are checked again and old redacted messages stay untouched', async () => {
   const h = harness();
   const post = await h.freshPost();
   await h.run();
-  h.posts.delete(post.id);
-  h.flags.edit = { kind: 'rejected', code: 403 };
+  h.records.get(post.id)!.availability = 'unavailable';
+  post.title = 'Visible again';
   h.advance(RECHECK_MS);
-  assert.equal((await h.run()).needsAttention?.code, 'TELEGRAM_EDIT_403');
-  assert.equal(h.records.get(post.id)?.stage, 'sent');
-  h.addPost('later', START + 2000);
-  h.advance(70_000);
-  assert.equal((await h.run()).status, 'removal-pending');
-  h.advance();
-  await assert.rejects(h.run(true, { ...DESTINATION, chatId: -4 }), /TELEGRAM_DESTINATION_CHANGED/);
+  assert.equal((await h.run(false)).updated, 1);
+  assert.equal(h.records.get(post.id)?.availability, 'available');
+  const redacted = h.addPost('legacy', START + 2000);
+  const oldRecord = h.records.get(redacted.id)!;
+  oldRecord.stage = 'redacted';
+  oldRecord.messageId = 99;
+  h.advance(RECHECK_MS);
+  const review = await h.run();
+  assert.equal(review.sent, 0);
+  assert.equal(review.updated, 0);
+  assert.equal(h.records.get(redacted.id)?.stage, 'redacted');
   assert.equal(h.calls.length, 2);
 });
