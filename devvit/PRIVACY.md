@@ -1,29 +1,26 @@
-# Privacy notice — draft for operator review
+# GLR Channel Bridge privacy notice
 
-This notice describes the read-only GLR Channel Bridge prototype. The operator
-must review and finalize it before submitting the app for approval. The app is
-not yet an active Telegram integration.
+The app reads public posts from r/GamingLeaksAndRumours through Devvit in the
+operator's private test installation. It uses public titles and original
+permalinks to notify readers of the operator's GLAR Telegram channel.
 
-The app reads public post metadata from r/GamingLeaksAndRumours through Devvit.
-It stores post identifiers, timestamps, processing states, availability and
-retry counters in Redis scoped to the operator's test installation. Titles and
-permalinks are transient and are not saved in Redis or logs. It does not save
-authors, post bodies, comments, media, profiles or user credentials.
+Redis stores post IDs, timestamps, availability, delivery status and, for
+sent posts, the Telegram message ID and a hash of the rendered message. Titles,
+permalinks, post bodies, comments, images and author identities are not stored
+in Redis. Logs use counts, short error codes and, when troubleshooting requires
+them, reference IDs. Telegram receives the message text, original public link
+and configured chat ID. The operator's bot token is a Devvit secret.
 
-No Reddit content is transferred to Telegram by this version. Logging is limited
-to aggregate counts and fixed operational error codes. Repository CI uses
-synthetic data and has no Reddit or Telegram secrets.
+The app keeps sent mappings so it can locate and update messages. When the source
+post is unavailable, the app records that status, retains the message mapping and
+hash, and preserves the delivered Telegram message's title and link. Ordinary
+unsent records and records redacted by older versions
+have a 30-day retention target while the collector runs. Unconfirmed reservations
+are retained for investigation and duplicate prevention. Polling has limited
+visibility into removals, so the operator also handles removal requests.
 
-Unsent metadata is pruned after a 30-day target in bounded batches while the
-collector is running. Pausing collection pauses this maintenance; operators
-must arrange a purge if needed. Minimal message mappings would need a separate
-retention policy if delivery is approved in a future version.
-
-The proposed later version would disclose a public post's title and permalink
-to Telegram and channel readers. That transfer is not enabled and requires
-approval, appropriate content permissions and an accepted removal process.
-No promise is made that periodic checks detect all source deletions.
-
-Support: https://github.com/isenekov/rss-telegram-bridge/issues. Use only the
-public post URL and minimum necessary information in a public issue. The operator
-must add a private contact before accepting requests containing personal data.
+The operator is [u/MaleficentWay4341](https://www.reddit.com/user/MaleficentWay4341/).
+For questions about this notice or requests to remove content or data, contact
+the operator through [r/gfar34_dev modmail](https://www.reddit.com/message/compose/?to=r%2Fgfar34_dev).
+Include the public post or Telegram message link needed to identify the item.
+Use the same contact for support.

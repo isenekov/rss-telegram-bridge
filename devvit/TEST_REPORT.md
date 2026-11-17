@@ -121,9 +121,27 @@ HTTP path from the installed Devvit app. See [TELEGRAM_TEST.md](TELEGRAM_TEST.md
 | Recovery after server/storage failures on Reddit | Not fault-injected live; covered only by local contract tests |
 | Five-minute scheduler execution on Reddit | Observe after enabling read-only polling |
 | Guaranteed deletion detection | Not claimed; periodic checks are best effort |
-| Reddit approval of this use and external transfer | Preliminary question ready for r/Devvit Modmail. See [REVIEW_REQUEST.md](REVIEW_REQUEST.md) |
-| Reddit → Telegram delivery and recovery | Not connected/enabled in the deployed review build |
+| Reddit approval of the Telegram version | Standard Devvit version review. See [REVIEW_REQUEST.md](REVIEW_REQUEST.md) |
+| Devvit → Telegram delivery and editing | Confirm in the approved test installation with the production switches off until validation |
 
 GitHub Actions runs the same offline checks with read-only repository permissions
 and no secrets. Source access, app registration, review submission and delivery
 must not be inferred from a green CI result.
+
+## Telegram version for review
+
+The candidate passes 48 offline tests, the Devvit config schema, TypeScript
+and the server bundle build. The delivery cases cover the default off state,
+fresh activation cutoff, no replay after success, a lost send reply or a lost
+receipt write, Telegram rate-limit timing, checking the original before a send,
+preserving the message and receipt after confirmed source unavailability,
+editing an available source's changed title, and resuming after a temporary
+Reddit error. Records saved as unavailable by older versions allow new sends
+to continue. Previously redacted messages keep their existing text. The cases
+also cover sending five posts per run and sharing duplicate protection between
+the one-time selection and automatic delivery. The destination stays bound to
+its original bot and chat.
+
+These tests inject synthetic source responses, storage and Telegram replies.
+Live Devvit HTTP and Redis delivery, the scheduled load, and the completeness
+of source removal signals remain to be evaluated in the approved installation.

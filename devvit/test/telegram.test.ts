@@ -79,6 +79,17 @@ test('Telegram explicit 4xx errors are rejected without in-request retries', asy
     assert.equal(calls, 1); assert.ok(!JSON.stringify(result).includes(TOKEN));
   }
 });
+test('Telegram retries a lost edit receipt safely and matches the original destination and message', async () => {
+  const client = new TelegramClient(TOKEN, async (url, init) => {
+    assert.ok(url.endsWith('/editMessageText'));
+    assert.deepEqual(JSON.parse(String(init.body)), {
+      chat_id: TARGET.chatId, message_id: 42, text: 'Исходная публикация недоступна.', parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+    });
+    return response({ ok: false, error_code: 400, description: 'Bad Request: message is not modified: the text is unchanged' }, 400);
+  });
+  assert.deepEqual(await client.edit(TARGET, 42, 'Исходная публикация недоступна.'), { kind: 'edited' });
+});
 test('Telegram timeouts, malformed replies, redirects and 5xx are unknown and do not leak errors', async () => {
   const cases: Fetcher[] = [
     async () => { throw new Error(`Timeout https://api.telegram.org/bot${TOKEN}/sendMessage`); },

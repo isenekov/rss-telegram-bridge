@@ -1,6 +1,4 @@
-/** Telegram transport prepared for a future reviewed integration.
- * Not imported by the deployed Devvit server. No automatic retries.
- */
+/** Telegram Bot API transport. Requests never retry internally. */
 export const SMOKE_ID = 'telegram-smoke-v1';
 export const SMOKE_MESSAGE = '<b>ТЕСТ — проверка отправки в Telegram</b>\nhttps://github.com/isenekov/rss-telegram-bridge';
 export type Fetcher = (url: string, init: RequestInit) => Promise<Response>;
@@ -26,23 +24,31 @@ function canPost(chatType: ChatType, member: Json): boolean {
 
 export type ApiReply =
   | { kind: 'ok'; result: unknown }
-  | { kind: 'rejected'; code: number; retryAfter?: number }
+  | { kind: 'rejected'; code: number; retryAfter?: number; unchanged?: true }
   | { kind: 'unknown' };
 export type Target = { botId: number; botUsername: string; chatId: number; title: string };
+export type TelegramDestination = { chatId: number; botId: number };
+type Method = 'getMe' | 'getChat' | 'getChatMember' | 'sendMessage' | 'editMessageText';
 
 export class TelegramClient {
   #token: string;
   #fetcher: Fetcher;
-  constructor(token: string, fetcher: Fetcher = fetch) {
+  #timeoutMs: number;
+  readonly botId: number;
+  constructor(token: string, fetcher: Fetcher = fetch, timeoutMs = 15_000) {
     if (!/^[1-9][0-9]{4,19}:[A-Za-z0-9_-]{20,128}$/.test(token)) throw new TelegramError('INVALID_BOT_TOKEN');
+    const botId = Number(token.slice(0, token.indexOf(':')));
+    if (!positiveId(botId)) throw new TelegramError('INVALID_BOT_TOKEN');
     this.#token = token;
     this.#fetcher = fetcher;
+    this.#timeoutMs = timeoutMs;
+    this.botId = botId;
   }
-  async #call(method: 'getMe' | 'getChat' | 'getChatMember' | 'sendMessage', body: Json): Promise<ApiReply> {
+  async #call(method: Method, body: Json): Promise<ApiReply> {
     try {
       const response = await this.#fetcher(`https://api.telegram.org/bot${this.#token}/${method}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(this.#timeoutMs),
       });
       const data: unknown = await response.json();
       if (!object(data)) return { kind: 'unknown' };
@@ -54,7 +60,10 @@ export class TelegramClient {
           (response.status === 200 || response.status === data.error_code)) {
         const retryAfter = object(data.parameters) && positiveId(data.parameters.retry_after)
           ? data.parameters.retry_after : undefined;
-        return { kind: 'rejected', code: data.error_code as number, ...(retryAfter ? { retryAfter } : {}) };
+        const unchanged = method === 'editMessageText' && data.error_code === 400 &&
+          typeof data.description === 'string' && /^Bad Request: message is not modified(?:[:.]|$)/i.test(data.description);
+        return { kind: 'rejected', code: data.error_code as number,
+          ...(retryAfter ? { retryAfter } : {}), ...(unchanged ? { unchanged: true } : {}) };
       }
     } catch { /* Never expose a fetch exception: its URL can contain the token. */ }
     return { kind: 'unknown' };
@@ -71,7 +80,7 @@ export class TelegramClient {
       throw new TelegramError('INVALID_CHAT_ADDRESS');
     }
     const bot = await this.#read('getMe', {});
-    if (!positiveId(bot.id) || bot.is_bot !== true || typeof bot.username !== 'string') throw new TelegramError('INVALID_BOT_RESPONSE');
+    if (bot.id !== this.botId || bot.is_bot !== true || typeof bot.username !== 'string') throw new TelegramError('INVALID_BOT_RESPONSE');
     const { id, type, title } = await this.#read('getChat', { chat_id: chat });
     if (type !== 'channel' && type !== 'group' && type !== 'supergroup') {
       throw new TelegramError('TARGET_MUST_BE_GROUP_OR_CHANNEL');
@@ -87,8 +96,8 @@ export class TelegramClient {
     }
     return { botId: bot.id, botUsername: bot.username, chatId: id, title };
   }
-  async send(target: Target, html: string): Promise<SendOutcome> {
-    if (!negativeChatId(target.chatId) || !positiveId(target.botId) || !html || html.length > 4096) {
+  async send(target: TelegramDestination, html: string): Promise<SendOutcome> {
+    if (!negativeChatId(target.chatId) || target.botId !== this.botId || !html || html.length > 4096) {
       throw new TelegramError('INVALID_MESSAGE');
     }
     const reply = await this.#call('sendMessage', {
@@ -102,12 +111,27 @@ export class TelegramClient {
     }
     return { kind: 'sent', messageId: r.message_id };
   }
+  async edit(target: TelegramDestination, messageId: number, html: string): Promise<EditOutcome> {
+    if (!negativeChatId(target.chatId) || target.botId !== this.botId || !positiveId(messageId) || !html || html.length > 4096) {
+      throw new TelegramError('INVALID_MESSAGE');
+    }
+    const reply = await this.#call('editMessageText', {
+      chat_id: target.chatId, message_id: messageId, text: html, parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+    });
+    if (reply.kind === 'rejected') return reply.unchanged ? { kind: 'edited' } : reply;
+    if (reply.kind !== 'ok' || !object(reply.result)) return { kind: 'unknown' };
+    const r = reply.result;
+    return r.message_id === messageId && object(r.chat) && r.chat.id === target.chatId
+      ? { kind: 'edited' } : { kind: 'unknown' };
+  }
 }
 
 export type SendOutcome =
   | { kind: 'sent'; messageId: number }
   | { kind: 'rejected'; code: number; retryAfter?: number }
   | { kind: 'unknown' };
+export type EditOutcome = { kind: 'edited' } | Exclude<SendOutcome, { kind: 'sent' }>;
 export type Reservation = { kind: 'reserved'; attempt: string };
 export type DeliveryResult = SendOutcome
   | { kind: 'already_sent'; messageId: number }

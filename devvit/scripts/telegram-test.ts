@@ -7,9 +7,12 @@ import { FileJournal } from './telegram-state.ts';
 const preview = SMOKE_MESSAGE.replaceAll('<b>', '').replaceAll('</b>', '');
 const cleanLabel = (v: string) => v.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').slice(0, 100);
 async function main() {
-  if (process.argv.slice(2).some(arg => arg !== '--preview')) throw new TelegramError('NO_SECRET_COMMAND_LINE_ARGUMENTS');
-  console.log(`Одно тестовое сообщение (без данных Reddit):\n\n${preview}\n`);
-  if (process.argv.includes('--preview')) return;
+  const [mode, ...extra] = process.argv.slice(2);
+  if (extra.length || (mode !== undefined && mode !== '--preview' && mode !== '--chat-id')) {
+    throw new TelegramError('NO_SECRET_COMMAND_LINE_ARGUMENTS');
+  }
+  if (mode !== '--chat-id') console.log(`Одно тестовое сообщение (без данных Reddit):\n\n${preview}\n`);
+  if (mode === '--preview') return;
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new TelegramError('RUN_IN_INTERACTIVE_TERMINAL');
   // The TTY is controlled by readline but its echo goes to a sink. Neither
   // tokens nor chat identifiers become shell commands or readline history.
@@ -31,6 +34,10 @@ async function main() {
     const target = await client.resolveChat(chat);
     if (cancelled) throw new TelegramError('CANCELLED');
     console.log(`Бот @${cleanLabel(target.botUsername)}. Чат «${cleanLabel(target.title)}».`);
+    if (mode === '--chat-id') {
+      console.log(`TELEGRAM_CHAT_ID=${target.chatId}`);
+      return;
+    }
     const journal = new FileJournal(fileURLToPath(new URL('../.telegram-test-state/', import.meta.url)), target);
     const result = await deliverOnce(journal, () => client.send(target, SMOKE_MESSAGE));
     console.log(JSON.stringify({ event: 'telegram_smoke', ...result }));

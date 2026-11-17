@@ -1,4 +1,4 @@
-/** Read-only collection stage. No Telegram calls or credentials belong here. */
+/** Public source collector and stored post metadata. */
 export const SOURCE = 'GamingLeaksAndRumours';
 export const MAX_SCAN = 500;
 export const OVERLAP_MS = 10 * 60_000;
@@ -20,13 +20,15 @@ export type RecordState = {
   id: string;
   createdAt: number;
   discoveredAt: number;
-  stage: 'baseline' | 'pending' | 'sent';
+  stage: 'baseline' | 'pending' | 'reserved' | 'sent' | 'redacted';
   availability: 'available' | 'unavailable' | 'unknown';
   lastCheckedAt: number;
   nextCheckAt: number;
   failures: number;
-  // Reserved for the future, reviewed delivery stage. Never store titles/bodies.
   messageId?: number;
+  fingerprint?: string;
+  retryDeliveryAt?: number;
+  latestFiveRequestedAt?: number;
 };
 export type Checkpoint = {
   version: 1;
@@ -60,11 +62,15 @@ export function assertCheckpoint(value: unknown): asserts value is Checkpoint {
 export function assertRecord(value: unknown): asserts value is RecordState {
   const r = value as RecordState;
   if (!r || !/^t3_[a-z0-9]+$/.test(r.id) ||
-      !['baseline', 'pending', 'sent'].includes(r.stage) ||
+      !['baseline', 'pending', 'reserved', 'sent', 'redacted'].includes(r.stage) ||
       !['available', 'unavailable', 'unknown'].includes(r.availability) ||
       ![r.createdAt, r.discoveredAt, r.lastCheckedAt, r.nextCheckAt, r.failures].every(Number.isFinite) ||
       r.createdAt <= 0 || r.failures < 0 || !Number.isInteger(r.failures) ||
-      (r.stage === 'sent' && (!Number.isSafeInteger(r.messageId) || r.messageId! <= 0))) {
+      (r.stage === 'sent' && (!Number.isSafeInteger(r.messageId) || r.messageId! <= 0 ||
+        typeof r.fingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(r.fingerprint))) ||
+      (r.retryDeliveryAt !== undefined && (!Number.isSafeInteger(r.retryDeliveryAt) || r.retryDeliveryAt <= 0)) ||
+      (r.latestFiveRequestedAt !== undefined &&
+        (!Number.isSafeInteger(r.latestFiveRequestedAt) || r.latestFiveRequestedAt <= 0))) {
     throw new BridgeError('INVALID_RECORD');
   }
 }
@@ -177,8 +183,8 @@ export async function collect(
   return report;
 }
 
-export function messageFor(post: Post): string {
-  if (!validPost(post, Date.now()) || sourceUnavailable(post)) throw new BridgeError('UNSAFE_MESSAGE');
+export function messageFor(post: Post, now = Date.now()): string {
+  if (!validPost(post, now) || sourceUnavailable(post)) throw new BridgeError('UNSAFE_MESSAGE');
   const escape = (s: string) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const url = `https://www.reddit.com${post.permalink}`;
   // Only a title and original permalink. No body, author, media, or summaries.

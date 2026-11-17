@@ -1,110 +1,102 @@
-# GLR Channel Bridge — read-only review build
+# GLR Channel Bridge
 
-This app is being developed for an operator who wants notifications about new
-public posts in r/GamingLeaksAndRumours in an existing Telegram channel. It is
-installed **only in the operator's own test subreddit**. The operator is not a
-moderator of the source subreddit. This is not a moderation tool and requests
-only the user-scoped Reddit capability.
+GLR Channel Bridge is an app for the operator of the GLAR Telegram channel. It
+reads new public posts in r/GamingLeaksAndRumours and can notify GLAR with the
+post title and a link to the original. It runs in the operator's private
+r/gfar34_dev installation. The operator does not moderate the source community.
+The app uses Devvit's user scope for public reads.
 
-**The deployed Devvit server cannot send anything to Telegram.** It has no delivery endpoint,
-Telegram credentials, or enabled HTTP capability. Source access and the proposed
-external transfer must be assessed by Reddit before a delivery build is enabled.
-App registration and working SDK methods do not establish policy approval.
+This version is a candidate for Reddit review. Scheduled collection and
+delivery start disabled. The operator completes the review and verifies
+Telegram access before enabling delivery. [Review and setup](../REDDIT_SETUP.md).
 
-A separate, interactive Codespaces command, `npm run telegram:test`, can send
-one fixed synthetic message through the operator's existing Telegram bot.
-It is not part of the Devvit server bundle, reads no Reddit data and is not
-connected to any scheduler or workflow. See [the manual Telegram test](TELEGRAM_TEST.md)
-for hidden credential entry, its local durable journal and ambiguous-outcome limits.
+## Collection and delivery
 
-## Implemented functionality
-
-- Explicit `reddit.getNewPosts({ subredditName: "GamingLeaksAndRumours" })`,
-  bounded to 500 results with 100-result pages.
-- First successful read establishes a baseline; historical IDs are not pending.
-- Redis metadata records, atomic checkpoint/index updates, a fenced 60-second
-  lease, overlap scans and persistent deduplication across process restarts.
-- A Devvit Scheduler task runs every five minutes. It returns without reading
-  unless `installationSubreddit` matches this installation and `pollingEnabled`
-  is explicitly enabled. Manual source reads work with polling disabled.
-- Ten due availability checks per run, targeting one hour between checks. Under
-  load, checks take longer. Explicit removal flags mean unavailable; API errors
-  mean unknown and retry with backoff. No `onPostDelete` subscription is used.
-- A tested message formatter for a future stage: title and original permalink
-  only. It is not connected to any external sender in the deployed app.
+- The collector runs every five minutes and uses
+  `reddit.getNewPosts({ subredditName: "GamingLeaksAndRumours" })` with a limit
+  of 500 results. The first successful read establishes a baseline.
+- On the first enabled delivery run, the app verifies the bot and destination
+  and records a new start time for automatic delivery.
+  The delivery job runs every five minutes, two minutes after the collector's
+  scheduled start, and sends at most five messages per run.
+- The app checks each post again before sending. Each message contains the
+  escaped title and a Reddit permalink, with link previews disabled.
+- Redis reserves the post ID before the Telegram request and records the
+  Telegram message ID on success. A definite rejection permits a later retry.
+  An unconfirmed send keeps its reservation for operator investigation.
+- The app checks previously sent posts periodically. A changed title or link
+  on an available source updates the existing Telegram message. When the
+  source becomes unavailable, the app records that status and preserves the
+  delivered title and link. New sends continue. A network or permission failure
+  during a Reddit lookup schedules another check.
+- The target interval for each sent post is one hour. Each invocation checks
+  up to ten posts and stops starting requests when its time budget expires.
+  Actual intervals depend on the backlog and service availability. Missing
+  source signals can prevent detection. The operator handles removal requests
+  using the message mapping and the support contact below.
+- Messages overwritten by an older app version keep their existing text.
 
 ## Setup and operation
 
-Use Node.js 24.18+ in Codespaces or another supported cloud environment. Run
-`npm ci` then `npm run verify`. Follow [the setup guide](../REDDIT_SETUP.md) to
-sign in personally using `npm run auth`, select your registered app name, and
-playtest in a subreddit you own. No secret or OAuth code belongs in Git or chat.
+Use Node.js 24.18+ in Codespaces. Run `npm ci` and `npm run verify`. Authenticate
+with `npm run auth` and use the app's configured private subreddit. Follow the
+[launch instructions](../REDDIT_SETUP.md#5-проверка-devvit-и-отправка-в-telegram)
+for the version review, installation and settings.
 
-The pinned Devvit CLI currently needs scoped overrides for `isomorphic-git`
-1.38.6 and `inquirer` 9.3.8 to avoid vulnerable transitive versions. The CLI and
-SDK remain at 0.15.3. The reviewed install scripts for the two locked esbuild
-versions and protobufjs are explicitly allowed by version in `package.json`.
-Do not run `npm audit fix --force`: it proposes changing the Devvit major version.
-Review these overrides again when upgrading the official CLI.
+A full moderator in the configured installation can use these subreddit menus.
 
-After installation, the developer sets `installationSubreddit` via
-`npx devvit settings set installationSubreddit`. A moderator with full
-permissions in that test subreddit uses its **GLR: read source now (no sending)**
-menu. Repeat the read after at least one minute, then again after new source
-posts appear. **GLR: collector status** reports pending ID counts. Only the
-operator's configured installation may read; other installations return disabled.
+- **GLR: read source now (no sending)** collects IDs and displays counts.
+- **GLR: collector status** shows the queue, tracked messages and unconfirmed
+  reservations.
+- **GLR: verify Telegram connection** checks the configured bot, chat and
+  posting permission.
+- **GLR: queue 5 latest posts for Telegram (once)** selects the five most
+  recent eligible public posts and queues them after delivery has started.
+  The delivery job sends up to five per run using the same delivery
+  history. Earlier receipts and unconfirmed reservations suppress duplicate
+  sends, and each original is checked again before its message is sent.
 
-Enable `pollingEnabled` in installation settings only after the manual source
-probe is successful and the proposed access is permitted. Turn it off to pause
-collection. There is no setting that enables Telegram delivery in this version.
+The developer enters the bot token and numeric chat ID as Devvit secrets.
+To pause new sends, turn off **Send new posts to Telegram**. Keep the installation
+and bot credentials available so the app can continue updating sent messages.
+The app binds its delivery history to the original bot and chat. Changing that
+destination requires handling the existing messages first.
+
+There is also a [manual Codespaces test](TELEGRAM_TEST.md) for a fixed synthetic
+message. It exercises the Telegram bot independently of the Devvit installation.
 
 ## Stored data and limits
 
-Redis contains Reddit post IDs, creation/discovery/check timestamps, pending or
-baseline states, availability and retry counters. Titles and permalinks exist
-transiently during a read but are not stored or logged. Authors, bodies, media,
-comments, profiles and user credentials are not collected. The SDK may transport
-additional public fields; the adapter immediately projects only the listed fields.
+Redis stores Reddit post IDs, timestamps, availability and delivery state. For
+posts sent to Telegram it keeps the message ID and a hash of the rendered
+message to detect edits. The hash is removed when the title and link are taken
+out of the message. Titles, links, author identities and bodies are not stored
+in Redis. Operational error messages can include a post ID and a Telegram
+message ID so the operator can locate a particular delivery.
 
-Unsent metadata has a 30-day retention target, pruned in batches of 100 per
-successful poll. Pausing collection also pauses pruning; uninstalling or a
-separate operator purge is needed if storage must be cleared while paused.
-The schema reserves a `sent` state and Telegram message ID for future removal
-tracking; this build never creates those records. Their behavior is tested using
-synthetic data only. Previously delivered mappings would be retained until the
-external content is removed, not automatically discarded after 30 days.
+Ordinary unsent records and redacted records are pruned in bounded batches after
+a 30-day retention target while the collector runs. Sent mappings and unconfirmed
+reservations survive that cleanup. Unconfirmed sends need a manual check in the
+channel. The app keeps their reservations to avoid repeated delivery.
+The one-time selection expires after 30 days and a flag records that it was
+requested. Eligible posts still pending have a 30-day retention target from
+the request.
 
-The scan watermark is committed with all newly observed metadata. A failed
-commit or source read does not advance it. A full 500-post window that does not
-reach the prior boundary raises `SCAN_WINDOW_GAP` and preserves the checkpoint.
-An operator must investigate and extend the bounded catch-up strategy; do not
-delete the checkpoint to suppress the error. A ten-minute overlap handles short
-listing delays, but cannot guarantee discovery of posts made visible much later.
-
-Availability checks are **best effort**, not guaranteed deletion detection. A
-public API response might not distinguish deletion from other access changes.
-This design does not claim to satisfy Reddit's deletion obligations by itself.
-The future delivery stage needs an approved removal procedure and live tests.
+The collector saves the checkpoint with the queued IDs. The 10-minute overlap
+covers short listing delays. If 500 results fail to reach the prior checkpoint,
+it reports `SCAN_WINDOW_GAP` without advancing the checkpoint.
 
 ## Fetch Domains
 
-**Current build:** HTTP is explicitly disabled; no external domain is requested.
+`api.telegram.org` is used for `getMe`, `getChat` and `getChatMember` to confirm
+access, `sendMessage` to deliver a title and link, and `editMessageText` to update
+the title or link while the original is available. The bot credentials are entered
+by the developer. Telegram processes message text and the destination chat ID.
 
-**Proposed delivery build:** `api.telegram.org` would be the sole domain, for the
-existing bot's `sendMessage`, `deleteMessage` and, where necessary,
-`editMessageText`. The planned payload is only a post title and its original
-Reddit permalink. The bot token would be a Devvit encrypted global secret entered
-by the operator; existing GitHub Secrets and RSS delivery would remain unchanged.
-Global domain allowlisting does not approve this use case or grant content rights.
+## Terms, privacy and support
 
-## Review and support
+[Terms](TERMS.md) · [Privacy](PRIVACY.md) · [Version review notes](REVIEW_REQUEST.md)
 
-[REVIEW_REQUEST.md](REVIEW_REQUEST.md) describes the exact proposed use and open
-questions. [PRIVACY.md](PRIVACY.md) and [TERMS.md](TERMS.md) are draft app documents
-for operator review before submission. Do not describe this build as an approved
-or functioning Telegram bridge.
-
-Report functional issues at
-https://github.com/isenekov/rss-telegram-bridge/issues without including secrets.
-Content-removal requests can identify the public Reddit URL; avoid including
-private or unnecessary personal information in a public issue.
+For support and removal requests, contact the operator through
+[r/gfar34_dev modmail](https://www.reddit.com/message/compose/?to=r%2Fgfar34_dev).
+Include a relevant public Reddit post or Telegram message link.

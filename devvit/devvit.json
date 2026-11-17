@@ -5,13 +5,17 @@
   "permissions": {
     "reddit": { "enable": true, "scope": "user" },
     "redis": true,
-    "http": { "enable": false, "domains": [] }
+    "http": { "enable": true, "domains": ["api.telegram.org"] }
   },
   "scheduler": {
     "tasks": {
       "read-new-posts": {
         "endpoint": "/internal/scheduler/read",
         "cron": "*/5 * * * *"
+      },
+      "maintain-telegram": {
+        "endpoint": "/internal/scheduler/telegram",
+        "cron": "2-59/5 * * * *"
       }
     }
   },
@@ -21,12 +25,28 @@
         "type": "string",
         "label": "Your own test subreddit (without r/)",
         "defaultValue": ""
+      },
+      "TELEGRAM_BOT_TOKEN": {
+        "type": "string",
+        "isSecret": true,
+        "label": "Telegram bot token"
+      },
+      "TELEGRAM_CHAT_ID": {
+        "type": "string",
+        "isSecret": true,
+        "label": "Numeric Telegram chat ID"
       }
     },
     "subreddit": {
       "pollingEnabled": {
         "type": "boolean",
-        "label": "Collect public post IDs every 5 minutes (never send to Telegram)",
+        "label": "Collect public post IDs every 5 minutes",
+        "defaultValue": false
+      },
+      "telegramDeliveryEnabled": {
+        "type": "boolean",
+        "label": "Send new posts to Telegram",
+        "helpText": "Enable after Reddit approves this version. The first run starts a fresh delivery window. Existing messages can still be updated when new sends are paused.",
         "defaultValue": false
       }
     }
@@ -44,6 +64,18 @@
         "forUserType": "moderator",
         "location": "subreddit",
         "endpoint": "/internal/menu/status"
+      },
+      {
+        "label": "GLR: verify Telegram connection",
+        "forUserType": "moderator",
+        "location": "subreddit",
+        "endpoint": "/internal/menu/verify-telegram"
+      },
+      {
+        "label": "GLR: queue 5 latest posts for Telegram (once)",
+        "forUserType": "moderator",
+        "location": "subreddit",
+        "endpoint": "/internal/menu/queue-latest-five"
       }
     ]
   }
